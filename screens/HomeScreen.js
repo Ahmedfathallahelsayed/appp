@@ -205,6 +205,15 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
+          {role === "admin" && (
+            <TouchableOpacity
+              style={styles.menuBtn}
+              onPress={() => nav.navigate("Admin")}
+            >
+              <Text style={styles.menuBtnText}>Instructors</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[styles.menuBtn, styles.logoutBtn]}
             onPress={handleLogout}
