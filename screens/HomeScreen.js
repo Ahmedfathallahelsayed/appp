@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import DigitalID from "./DigitalID";
+import { useRoute } from "@react-navigation/native";
 
 import {
   View,
@@ -13,21 +14,18 @@ import {
 } from "react-native";
 
 import { useNavigation } from "@react-navigation/native";
-
 import { auth, db } from "../firebase";
 import { signOut } from "firebase/auth";
-
 import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
 
 export default function HomeScreen() {
   const nav = useNavigation();
+  const route = useRoute();
 
   const [userName, setUserName] = useState("");
   const [classes, setClasses] = useState([]);
-  const [role, setRole] = useState("");
-
+  const [role, setRole] = useState(route.params?.role || "");
   const [page, setPage] = useState("dashboard");
-
   const [className, setClassName] = useState("");
 
   useEffect(() => {
@@ -40,12 +38,10 @@ export default function HomeScreen() {
     if (!user) return;
 
     const q = query(collection(db, "users"), where("uid", "==", user.uid));
-
     const querySnapshot = await getDocs(q);
 
     if (!querySnapshot.empty) {
       const data = querySnapshot.docs[0].data();
-
       setUserName(data.firstName + " " + data.lastName);
       setRole(data.role);
     }
@@ -53,7 +49,6 @@ export default function HomeScreen() {
 
   const loadClasses = async () => {
     const user = auth.currentUser;
-
     if (!user) return;
 
     const q = query(
@@ -62,14 +57,10 @@ export default function HomeScreen() {
     );
 
     const snapshot = await getDocs(q);
-
     let list = [];
 
     snapshot.forEach((doc) => {
-      list.push({
-        id: doc.id,
-        ...doc.data(),
-      });
+      list.push({ id: doc.id, ...doc.data() });
     });
 
     setClasses(list);
@@ -77,7 +68,6 @@ export default function HomeScreen() {
 
   const handleLogout = async () => {
     await signOut(auth);
-
     nav.replace("Login");
   };
 
@@ -95,9 +85,7 @@ export default function HomeScreen() {
       });
 
       Alert.alert("Class created");
-
       setClassName("");
-
       loadClasses();
     } catch (error) {
       console.log(error);
@@ -110,7 +98,21 @@ export default function HomeScreen() {
     }
 
     if (page === "attendance") {
-      return <Text style={styles.welcome}>Attendance Page</Text>;
+      return (
+        <View style={{ alignItems: "center" }}>
+          <Text style={styles.welcome}>Attendance Page</Text>
+          {role === "student" && (
+            <TouchableOpacity
+              style={[styles.createBtn, { marginTop: 30, paddingHorizontal: 30 }]}
+              onPress={() => nav.navigate("QRScanner")}
+            >
+              <Text style={{ color: "white", fontWeight: "700", fontSize: 16 }}>
+                📷 Scan QR
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      );
     }
 
     if (page === "digitalID" && role === "student") {
@@ -141,9 +143,7 @@ export default function HomeScreen() {
 
               <TouchableOpacity
                 style={styles.manageBtn}
-                onPress={() =>
-                  nav.navigate("ManageClass", { classId: item.id })
-                }
+                onPress={() => nav.navigate("ManageClass", { classId: item.id })}
               >
                 <Text style={{ color: "white" }}>Manage Class</Text>
               </TouchableOpacity>
@@ -166,7 +166,6 @@ export default function HomeScreen() {
 
           <View style={{ alignItems: "flex-end" }}>
             <Text style={styles.userName}>👤 {userName}</Text>
-
             <Text style={styles.role}>{role}</Text>
           </View>
         </View>
@@ -224,55 +223,46 @@ const styles = StyleSheet.create({
     padding: 20,
     justifyContent: "space-between",
   },
-
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 20,
   },
-
   facultyText: {
     fontSize: 16,
     fontWeight: "700",
     color: "#0f172a",
   },
-
   userName: {
     fontSize: 15,
     fontWeight: "700",
   },
-
   role: {
     fontSize: 13,
     color: "gray",
     marginTop: 4,
   },
-
   rightSide: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-
   welcome: {
     fontSize: 22,
     fontWeight: "700",
     textAlign: "center",
   },
-
   title: {
     fontSize: 20,
     fontWeight: "700",
     marginBottom: 20,
   },
-
   input: {
     backgroundColor: "#e2e8f0",
     padding: 12,
     borderRadius: 10,
     marginBottom: 10,
   },
-
   createBtn: {
     backgroundColor: "#2563eb",
     padding: 12,
@@ -280,7 +270,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
-
   classCard: {
     backgroundColor: "#e2e8f0",
     padding: 15,
@@ -290,24 +279,20 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   className: {
     fontWeight: "700",
   },
-
   manageBtn: {
     backgroundColor: "#2563eb",
     padding: 10,
     borderRadius: 8,
   },
-
   bottomBtns: {
     flexDirection: "row",
     justifyContent: "space-between",
     flexWrap: "wrap",
     marginBottom: 10,
   },
-
   menuBtn: {
     backgroundColor: "#2563eb1A",
     paddingVertical: 10,
@@ -317,14 +302,12 @@ const styles = StyleSheet.create({
     minWidth: "22%",
     alignItems: "center",
   },
-
   menuBtnText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#2563eb",
     textAlign: "center",
   },
-
   logoutBtn: {
     backgroundColor: "#dc2626",
   },

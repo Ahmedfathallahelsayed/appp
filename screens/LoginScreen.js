@@ -8,14 +8,12 @@ import {
   Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-
 import { auth, db } from "../firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { collection, query, where, getDocs } from "firebase/firestore";
 
 export default function LoginScreen() {
   const nav = useNavigation();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -26,18 +24,14 @@ export default function LoginScreen() {
     }
 
     try {
-      // تسجيل الدخول
       const userCredential = await signInWithEmailAndPassword(
         auth,
         email,
         password,
       );
-
       const user = userCredential.user;
 
-      // البحث عن المستخدم في Firestore
       const q = query(collection(db, "users"), where("uid", "==", user.uid));
-
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
@@ -46,14 +40,11 @@ export default function LoginScreen() {
       }
 
       const userData = querySnapshot.docs[0].data();
-
       const role = userData.role;
 
       Alert.alert("Success", "Login successful");
 
-      // توجيه حسب الدور
-
-      nav.replace("Home");
+      nav.replace("Home", { role: role });
     } catch (error) {
       console.log(error);
       Alert.alert("Login Failed", "Email or password is incorrect");
@@ -67,7 +58,6 @@ export default function LoginScreen() {
 
       <View style={styles.inputBox}>
         <Text style={styles.label}>Email</Text>
-
         <TextInput
           style={styles.input}
           placeholder="you@example.com"
@@ -79,7 +69,6 @@ export default function LoginScreen() {
 
       <View style={styles.inputBox}>
         <Text style={styles.label}>Password</Text>
-
         <TextInput
           style={styles.input}
           placeholder="Password"
@@ -94,7 +83,7 @@ export default function LoginScreen() {
       </Pressable>
 
       <Text style={styles.bottomText}>
-        Don’t have an account?{" "}
+        Don't have an account?{" "}
         <Text style={styles.link} onPress={() => nav.navigate("Register")}>
           Register
         </Text>
@@ -113,13 +102,11 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     elevation: 2,
   },
-
   title: {
     fontSize: 24,
     fontWeight: "700",
     textAlign: "center",
   },
-
   subtitle: {
     fontSize: 13,
     color: "gray",
@@ -127,16 +114,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 20,
   },
-
   inputBox: {
     marginBottom: 14,
   },
-
   label: {
     fontSize: 13,
     fontWeight: "600",
   },
-
   input: {
     height: 44,
     marginTop: 6,
@@ -146,7 +130,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#d1d5db",
   },
-
   button: {
     height: 48,
     backgroundColor: "dodgerblue",
@@ -154,20 +137,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 8,
   },
-
   btnText: {
     color: "#fff",
     fontWeight: "700",
     textAlign: "center",
     fontSize: 16,
   },
-
   bottomText: {
     marginTop: 16,
     textAlign: "center",
     color: "darkgrey",
   },
-
   link: {
     color: "#2563eb",
     fontWeight: "700",
