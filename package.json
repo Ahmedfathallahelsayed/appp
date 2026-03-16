@@ -12,11 +12,7 @@
     "@react-navigation/native": "^7.1.31",
     "@react-navigation/native-stack": "^7.14.2",
     "expo": "~54.0.0",
-<<<<<<< HEAD
-    "expo-barcode-scanner": "^13.0.1",
-=======
     "expo-camera": "~17.0.10",
->>>>>>> a943725ca9fd0426059f64529ff71878db7c3553
     "expo-status-bar": "~55.0.4",
     "firebase": "^12.10.0",
     "react": "19.1.0",
