@@ -9,7 +9,6 @@ import {
   Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-
 import { auth, db } from "../firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -19,7 +18,6 @@ const ROLES = ["student", "instructor", "admin"];
 
 export default function RegisterScreen() {
   const nav = useNavigation();
-
   const [role, setRole] = useState("student");
   const [first, setFirst] = useState("");
   const [last, setLast] = useState("");
@@ -39,11 +37,13 @@ export default function RegisterScreen() {
         uniEmail,
         password,
       );
+      const uid = userCredential.user.uid;
 
       const studentId = await generateStudentId();
 
-      await setDoc(doc(db, "users", String(studentId)), {
-        uid: userCredential.user.uid,
+      // ✅ الـ document بالـ uid مش بالـ studentId
+      await setDoc(doc(db, "users", uid), {
+        uid: uid,
         studentId: studentId,
         firstName: first,
         lastName: last,
@@ -57,8 +57,6 @@ export default function RegisterScreen() {
       nav.navigate("Login");
     } catch (error) {
       console.log("ERROR CODE:", error.code);
-      console.log("ERROR MESSAGE:", error.message);
-
       Alert.alert("Register Error", error.code);
     }
   };
@@ -74,7 +72,6 @@ export default function RegisterScreen() {
         <View style={styles.roleRow}>
           {ROLES.map((r) => {
             const selected = role === r;
-
             return (
               <Pressable
                 key={r}
@@ -100,7 +97,6 @@ export default function RegisterScreen() {
               onChangeText={setFirst}
             />
           </View>
-
           <View style={styles.inputBox}>
             <Text style={styles.label}>Last Name</Text>
             <TextInput
@@ -118,6 +114,7 @@ export default function RegisterScreen() {
             value={uniEmail}
             onChangeText={setUniEmail}
             keyboardType="email-address"
+            autoCapitalize="none"
           />
         </View>
 
@@ -164,13 +161,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignSelf: "center",
   },
-
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
+  title: { fontSize: 22, fontWeight: "700", textAlign: "center" },
   subtitle: {
     fontSize: 13,
     color: "gray",
@@ -178,7 +169,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 16,
   },
-
   roleRow: {
     flexDirection: "row",
     justifyContent: "center",
@@ -186,7 +176,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     flexWrap: "wrap",
   },
-
   roleChip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -194,35 +183,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#cbd5e1",
   },
-
-  roleChipSelected: {
-    backgroundColor: "#2563eb1A",
-    borderColor: "#2563eb",
-  },
-
-  roleText: {
-    fontWeight: "600",
-  },
-
-  roleTextSelected: {
-    color: "#2563eb",
-  },
-
-  row: {
-    flexDirection: "row",
-    gap: 16,
-  },
-
-  inputBox: {
-    flex: 1,
-    marginBottom: 12,
-  },
-
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
+  roleChipSelected: { backgroundColor: "#2563eb1A", borderColor: "#2563eb" },
+  roleText: { fontWeight: "600" },
+  roleTextSelected: { color: "#2563eb" },
+  row: { flexDirection: "row", gap: 16 },
+  inputBox: { flex: 1, marginBottom: 12 },
+  label: { fontSize: 13, fontWeight: "600" },
   input: {
     height: 44,
     marginTop: 6,
@@ -230,28 +196,13 @@ const styles = StyleSheet.create({
     backgroundColor: "gainsboro",
     paddingHorizontal: 10,
   },
-
   button: {
     height: 48,
     backgroundColor: "dodgerblue",
     justifyContent: "center",
     borderRadius: 12,
   },
-
-  btnText: {
-    color: "#fff",
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
-  bottomText: {
-    marginTop: 16,
-    textAlign: "center",
-    color: "darkgrey",
-  },
-
-  link: {
-    color: "#2563eb",
-    fontWeight: "700",
-  },
+  btnText: { color: "#fff", fontWeight: "700", textAlign: "center" },
+  bottomText: { marginTop: 16, textAlign: "center", color: "darkgrey" },
+  link: { color: "#2563eb", fontWeight: "700" },
 });

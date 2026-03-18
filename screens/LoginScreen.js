@@ -10,7 +10,14 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { auth, db } from "../firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
 
 export default function LoginScreen() {
   const nav = useNavigation();
@@ -29,22 +36,29 @@ export default function LoginScreen() {
         email,
         password,
       );
-      const user = userCredential.user;
+      const uid = userCredential.user.uid;
 
-      const q = query(collection(db, "users"), where("uid", "==", user.uid));
-      const querySnapshot = await getDocs(q);
+      // جرب الأول بالـ uid مباشرة (الأكاونتات الجديدة)
+      let userData = null;
+      const directSnap = await getDoc(doc(db, "users", uid));
 
-      if (querySnapshot.empty) {
+      if (directSnap.exists()) {
+        userData = directSnap.data();
+      } else {
+        // fallback للأكاونتات القديمة اللي document ID مش uid
+        const q = query(collection(db, "users"), where("uid", "==", uid));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          userData = snap.docs[0].data();
+        }
+      }
+
+      if (!userData) {
         Alert.alert("Error", "User data not found");
         return;
       }
 
-      const userData = querySnapshot.docs[0].data();
-      const role = userData.role;
-
-      Alert.alert("Success", "Login successful");
-
-      nav.replace("Home", { role: role });
+      nav.replace("Home", { role: userData.role });
     } catch (error) {
       console.log(error);
       Alert.alert("Login Failed", "Email or password is incorrect");
@@ -102,11 +116,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     elevation: 2,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+  title: { fontSize: 24, fontWeight: "700", textAlign: "center" },
   subtitle: {
     fontSize: 13,
     color: "gray",
@@ -114,13 +124,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 20,
   },
-  inputBox: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
+  inputBox: { marginBottom: 14 },
+  label: { fontSize: 13, fontWeight: "600" },
   input: {
     height: 44,
     marginTop: 6,
@@ -143,13 +148,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 16,
   },
-  bottomText: {
-    marginTop: 16,
-    textAlign: "center",
-    color: "darkgrey",
-  },
-  link: {
-    color: "#2563eb",
-    fontWeight: "700",
-  },
+  bottomText: { marginTop: 16, textAlign: "center", color: "darkgrey" },
+  link: { color: "#2563eb", fontWeight: "700" },
 });
