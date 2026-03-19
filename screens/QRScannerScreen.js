@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -26,110 +26,125 @@ export default function QRScannerScreen() {
   const [loading, setLoading] = useState(false);
   const nav = useNavigation();
 
-  if (!permission) return <View />;
+  // القفل المركزي لمنع تكرار الـ QR
+  const isProcessing = useRef(false);
+
+  const handleSafeBack = () => {
+    if (nav.canGoBack()) {
+      nav.goBack();
+    } else {
+      nav.reset({
+        index: 0,
+        routes: [{ name: "Home" }],
+      });
+    }
+  };
+
+  if (!permission) return <View style={styles.container} />;
 
   if (!permission.granted) {
     return (
       <View style={styles.center}>
-        <Text style={styles.msg}>Camera permission needed</Text>
+        <Text style={styles.msg}>الكاميرا محتاجة إذن عشان تشتغل</Text>
         <TouchableOpacity style={styles.btn} onPress={requestPermission}>
-          <Text style={{ color: "white" }}>Allow Camera</Text>
+          <Text style={{ color: "white", fontWeight: "bold" }}>سماح بالكاميرا</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   const getUserData = async (uid) => {
-    // جرب بالـ uid مباشرة
-    const directSnap = await getDoc(doc(db, "users", uid));
-    if (directSnap.exists()) return directSnap.data();
+    try {
+      const directSnap = await getDoc(doc(db, "users", uid));
+      if (directSnap.exists()) return directSnap.data();
 
-    // fallback للأكاونتات القديمة
-    const q = query(collection(db, "users"), where("uid", "==", uid));
-    const snap = await getDocs(q);
-    if (!snap.empty) return snap.docs[0].data();
-
+      const q = query(collection(db, "users"), where("uid", "==", uid));
+      const snap = await getDocs(q);
+      if (!snap.empty) return snap.docs[0].data();
+    } catch (e) {
+      console.error("Error fetching user data:", e);
+    }
     return null;
   };
 
   const handleScanned = async ({ data }) => {
-    if (scanned || loading) return;
+    if (isProcessing.current || scanned) return; // خروج لو في عملية
+    isProcessing.current = true;
     setScanned(true);
     setLoading(true);
 
     try {
-      // جيب الـ sessionId من آخر جزء في الـ URL
       const sessionId = data.split("/").pop();
+      if (!sessionId) throw new Error("QR code غير صالح");
 
-      if (!sessionId) {
-        Alert.alert("❌ خطأ", "QR code غير صحيح", [
-          { text: "حاول تاني", onPress: () => setScanned(false) },
-        ]);
-        setLoading(false);
-        return;
-      }
-
-      // تأكد إن الـ session active
-      const sessionSnap = await getDoc(doc(db, "sessions", sessionId));
-      if (!sessionSnap.exists() || !sessionSnap.data().active) {
-        Alert.alert("❌ Session منتهية", "الـ session دي مش شغالة دلوقتي", [
-          { text: "حاول تاني", onPress: () => setScanned(false) },
-        ]);
-        setLoading(false);
-        return;
-      }
-
-      // جيب بيانات الطالب
       const user = auth.currentUser;
       if (!user) {
-        Alert.alert("❌ مش logged in", "لازم تلوقن الأول");
+        Alert.alert("❌ عذراً", "يجب عليك تسجيل الدخول أولاً");
+        setLoading(false);
+        return;
+      }
+
+      const attendanceRef = collection(db, "attendance");
+      const alreadyQ = query(
+        attendanceRef,
+        where("sessionId", "==", sessionId),
+        where("studentUid", "==", user.uid)
+      );
+      const alreadySnap = await getDocs(alreadyQ);
+
+      if (!alreadySnap.empty) {
+        Alert.alert("⚠️ تنبيه", "أنت مسجل حضور بالفعل في هذه الجلسة", [
+          { text: "حسناً", onPress: handleSafeBack },
+        ]);
+        setLoading(false);
+        return;
+      }
+
+      const sessionSnap = await getDoc(doc(db, "sessions", sessionId));
+      if (!sessionSnap.exists() || !sessionSnap.data().active) {
+        Alert.alert("❌ خطأ", "هذه الجلسة غير متاحة حالياً", [
+          {
+            text: "حاول مرة أخرى",
+            onPress: () => {
+              isProcessing.current = false;
+              setScanned(false);
+            },
+          },
+        ]);
         setLoading(false);
         return;
       }
 
       const userData = await getUserData(user.uid);
-      if (!userData) {
-        Alert.alert("❌ خطأ", "مش لاقي بيانات المستخدم");
-        setLoading(false);
-        return;
-      }
 
-      // تأكد مش سجّل قبل كده
-      const alreadyQ = query(
-        collection(db, "attendance"),
-        where("sessionId", "==", sessionId),
-        where("studentUid", "==", user.uid),
-      );
-      const alreadySnap = await getDocs(alreadyQ);
-      if (!alreadySnap.empty) {
-        Alert.alert("⚠️ مسجّل قبل كده", "انت بالفعل سجّلت حضورك", [
-          { text: "OK", onPress: () => nav.goBack() },
-        ]);
-        setLoading(false);
-        return;
-      }
-
-      // سجّل الحضور
-      await addDoc(collection(db, "attendance"), {
+      await addDoc(attendanceRef, {
         sessionId,
-        classId: sessionSnap.data().classId,
+        classId: sessionSnap.data().classId || "",
         studentUid: user.uid,
-        studentName: `${userData.firstName} ${userData.lastName}`,
-        studentId: userData.studentId || "",
+        studentName: userData
+          ? `${userData.firstName} ${userData.lastName}`
+          : "Unknown Student",
+        studentId: userData?.studentId || "",
         timestamp: new Date(),
       });
 
-      Alert.alert("✅ تم تسجيل حضورك", `أهلاً ${userData.firstName}!`, [
-        { text: "OK", onPress: () => nav.goBack() },
+      Alert.alert("✅ ناجح", `تم تسجيل حضورك بنجاح!`, [
+        { text: "ممتاز", onPress: handleSafeBack },
       ]);
     } catch (err) {
       console.error(err);
-      Alert.alert("❌ خطأ", "حصل مشكلة، حاول تاني", [
-        { text: "حاول تاني", onPress: () => setScanned(false) },
+      Alert.alert("❌ خطأ", "حدث خطأ، حاول مرة أخرى", [
+        {
+          text: "إغلاق",
+          onPress: () => {
+            isProcessing.current = false;
+            setScanned(false);
+          },
+        },
       ]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -137,20 +152,25 @@ export default function QRScannerScreen() {
       <CameraView
         style={styles.camera}
         facing="back"
-        onBarcodeScanned={handleScanned}
+        onBarcodeScanned={scanned ? undefined : handleScanned}
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
       />
 
       {loading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="white" />
-          <Text style={styles.loadingText}>جاري تسجيل الحضور...</Text>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={styles.loadingText}>جاري التحقق من البيانات...</Text>
         </View>
       )}
 
-      <View style={styles.scanFrame} />
+      {!loading && (
+        <View style={styles.overlayContainer}>
+          <View style={styles.scanFrame} />
+          <Text style={styles.instructionText}>ضع رمز الـ QR داخل الإطار</Text>
+        </View>
+      )}
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => nav.goBack()}>
+      <TouchableOpacity style={styles.backBtn} onPress={handleSafeBack}>
         <Text style={{ color: "white", fontWeight: "700" }}>← رجوع</Text>
       </TouchableOpacity>
     </View>
@@ -165,42 +185,51 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    backgroundColor: "#f9fafb",
   },
-  msg: { fontSize: 16, marginBottom: 20, textAlign: "center" },
+  msg: { fontSize: 16, marginBottom: 20, textAlign: "center", color: "#374151" },
   btn: {
     backgroundColor: "#2563eb",
-    padding: 12,
-    borderRadius: 10,
-    paddingHorizontal: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 8,
   },
   backBtn: {
     position: "absolute",
     top: 50,
     left: 20,
-    backgroundColor: "#00000088",
+    backgroundColor: "rgba(0,0,0,0.6)",
     padding: 10,
     borderRadius: 8,
+    zIndex: 10,
   },
-  scanFrame: {
-    position: "absolute",
-    top: "30%",
-    left: "20%",
-    width: "60%",
-    height: "25%",
-    borderWidth: 2,
-    borderColor: "white",
-    borderRadius: 12,
-  },
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "#000000aa",
+  overlayContainer: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    gap: 16,
   },
-  loadingText: { color: "white", fontSize: 16, fontWeight: "600" },
+  scanFrame: {
+    width: 250,
+    height: 250,
+    borderWidth: 2,
+    borderColor: "#2563eb",
+    backgroundColor: "transparent",
+    borderRadius: 20,
+  },
+  instructionText: {
+    color: "white",
+    marginTop: 20,
+    fontSize: 14,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    padding: 8,
+    borderRadius: 5,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 20,
+  },
+  loadingText: { color: "#2563eb", fontSize: 16, fontWeight: "600", marginTop: 10 },
 });
