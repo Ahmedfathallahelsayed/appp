@@ -7,9 +7,10 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
+  SafeAreaView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-
 import { auth, db } from "../firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -19,7 +20,6 @@ const ROLES = ["student", "instructor", "admin"];
 
 export default function RegisterScreen() {
   const nav = useNavigation();
-
   const [role, setRole] = useState("student");
   const [first, setFirst] = useState("");
   const [last, setLast] = useState("");
@@ -32,58 +32,50 @@ export default function RegisterScreen() {
       Alert.alert("Missing", "Please fill all fields.");
       return;
     }
-
     try {
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        uniEmail,
-        password,
-      );
-
+      const userCredential = await createUserWithEmailAndPassword(auth, uniEmail, password);
       const studentId = await generateStudentId();
-
       await setDoc(doc(db, "users", String(studentId)), {
         uid: userCredential.user.uid,
-        studentId: studentId,
+        studentId,
         firstName: first,
         lastName: last,
         email: uniEmail,
         nationalId: nid,
-        role: role,
+        role,
         createdAt: serverTimestamp(),
       });
-
       Alert.alert("Success", "Account created!");
       nav.navigate("Login");
     } catch (error) {
       console.log("ERROR CODE:", error.code);
-      console.log("ERROR MESSAGE:", error.message);
-
       Alert.alert("Register Error", error.code);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={{ paddingVertical: 40 }}>
-      <View style={styles.container}>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+
+        <Image
+          source={require("../assets/cairo_logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+
         <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>
-          Select your role and fill in your details
-        </Text>
+        <Text style={styles.subtitle}>Select your role and fill in your details</Text>
 
         <View style={styles.roleRow}>
           {ROLES.map((r) => {
             const selected = role === r;
-
             return (
               <Pressable
                 key={r}
                 onPress={() => setRole(r)}
                 style={[styles.roleChip, selected && styles.roleChipSelected]}
               >
-                <Text
-                  style={[styles.roleText, selected && styles.roleTextSelected]}
-                >
+                <Text style={[styles.roleText, selected && styles.roleTextSelected]}>
                   {r.charAt(0).toUpperCase() + r.slice(1)}
                 </Text>
               </Pressable>
@@ -91,167 +83,110 @@ export default function RegisterScreen() {
           })}
         </View>
 
-        <View style={styles.row}>
-          <View style={styles.inputBox}>
+        <View style={styles.nameRow}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.label}>First Name</Text>
             <TextInput
               style={styles.input}
+              placeholder="First Name"
+              placeholderTextColor="#94a3b8"
               value={first}
               onChangeText={setFirst}
             />
           </View>
-
-          <View style={styles.inputBox}>
+          <View style={{ flex: 1 }}>
             <Text style={styles.label}>Last Name</Text>
             <TextInput
               style={styles.input}
+              placeholder="Last Name"
+              placeholderTextColor="#94a3b8"
               value={last}
               onChangeText={setLast}
             />
           </View>
         </View>
 
-        <View style={styles.inputBox}>
-          <Text style={styles.label}>University Email</Text>
-          <TextInput
-            style={styles.input}
-            value={uniEmail}
-            onChangeText={setUniEmail}
-            keyboardType="email-address"
-          />
-        </View>
+        <Text style={styles.label}>University Email</Text>
+        <TextInput
+          style={styles.inputFull}
+          placeholder="you@university.edu"
+          placeholderTextColor="#94a3b8"
+          value={uniEmail}
+          onChangeText={setUniEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
 
-        <View style={styles.inputBox}>
-          <Text style={styles.label}>National ID</Text>
-          <TextInput
-            style={styles.input}
-            value={nid}
-            onChangeText={setNid}
-            keyboardType="number-pad"
-          />
-        </View>
+        <Text style={styles.label}>National ID</Text>
+        <TextInput
+          style={styles.inputFull}
+          placeholder="Enter National ID"
+          placeholderTextColor="#94a3b8"
+          value={nid}
+          onChangeText={setNid}
+          keyboardType="number-pad"
+        />
 
-        <View style={styles.inputBox}>
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-        </View>
+        <Text style={styles.label}>Password</Text>
+        <TextInput
+          style={styles.inputFull}
+          placeholder="Create password"
+          placeholderTextColor="#94a3b8"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
 
         <Pressable style={styles.button} onPress={onRegister}>
-          <Text style={styles.btnText}>Create Account</Text>
+          <Text style={styles.btnText}>
+            Create Account ({role.charAt(0).toUpperCase() + role.slice(1)})
+          </Text>
         </Pressable>
 
         <Text style={styles.bottomText}>
           Already have an account?{" "}
           <Text style={styles.link} onPress={() => nav.navigate("Login")}>
-            Login
+            Sign in
           </Text>
         </Text>
-      </View>
-    </ScrollView>
+
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    width: "90%",
-    backgroundColor: "#fff",
-    padding: 24,
-    borderRadius: 16,
-    alignSelf: "center",
-  },
-
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
-  subtitle: {
-    fontSize: 13,
-    color: "gray",
-    textAlign: "center",
-    marginTop: 6,
-    marginBottom: 16,
-  },
-
-  roleRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 16,
-    flexWrap: "wrap",
-  },
-
+  safe: { flex: 1, backgroundColor: "#ffffff" },
+  scroll: { paddingHorizontal: 28, paddingTop: 40, paddingBottom: 40 },
+  logo: { width: 120, height: 120, alignSelf: "center", marginBottom: 24 },
+  title: { fontSize: 26, fontWeight: "800", color: "#0f172a", marginBottom: 6 },
+  subtitle: { fontSize: 14, color: "#64748b", marginBottom: 20 },
+  roleRow: { flexDirection: "row", gap: 8, marginBottom: 20, flexWrap: "wrap" },
   roleChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
+    paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 20, borderWidth: 1.5, borderColor: "#e2e8f0",
   },
-
-  roleChipSelected: {
-    backgroundColor: "#2563eb1A",
-    borderColor: "#2563eb",
-  },
-
-  roleText: {
-    fontWeight: "600",
-  },
-
-  roleTextSelected: {
-    color: "#2563eb",
-  },
-
-  row: {
-    flexDirection: "row",
-    gap: 16,
-  },
-
-  inputBox: {
-    flex: 1,
-    marginBottom: 12,
-  },
-
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
+  roleChipSelected: { backgroundColor: "#eff6ff", borderColor: "#2563eb" },
+  roleText: { fontSize: 14, fontWeight: "600", color: "#64748b" },
+  roleTextSelected: { color: "#2563eb" },
+  nameRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
+  label: { fontSize: 13, fontWeight: "600", color: "#0f172a", marginBottom: 6 },
   input: {
-    height: 44,
-    marginTop: 6,
-    borderRadius: 10,
-    backgroundColor: "gainsboro",
-    paddingHorizontal: 10,
+    height: 48, borderRadius: 12, borderWidth: 1.5, borderColor: "#e2e8f0",
+    paddingHorizontal: 14, fontSize: 14, color: "#0f172a",
   },
-
+  inputFull: {
+    height: 48, borderRadius: 12, borderWidth: 1.5, borderColor: "#e2e8f0",
+    paddingHorizontal: 14, fontSize: 14, color: "#0f172a", marginBottom: 16,
+  },
   button: {
-    height: 48,
-    backgroundColor: "dodgerblue",
-    justifyContent: "center",
-    borderRadius: 12,
+    height: 52, borderRadius: 14, backgroundColor: "#1e3a8a",
+    justifyContent: "center", alignItems: "center",
+    marginBottom: 20, marginTop: 4,
+    shadowColor: "#1e3a8a", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 10, elevation: 5,
   },
-
-  btnText: {
-    color: "#fff",
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
-  bottomText: {
-    marginTop: 16,
-    textAlign: "center",
-    color: "darkgrey",
-  },
-
-  link: {
-    color: "#2563eb",
-    fontWeight: "700",
-  },
+  btnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
+  bottomText: { textAlign: "center", color: "#64748b", fontSize: 14 },
+  link: { color: "#2563eb", fontWeight: "700" },
 });
