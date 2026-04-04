@@ -7,6 +7,7 @@ import HomeScreen from "./screens/HomeScreen";
 import ManageClassScreen from "./screens/ManageClassScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import AdminScreen from "./screens/AdminScreen";
+import AdminDashboardScreen from "./screens/AdminDashboardScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -23,6 +24,7 @@ export default function App() {
         <Stack.Screen name="ManageClass" component={ManageClassScreen} />
         <Stack.Screen name="QRScanner" component={QRScannerScreen} />
         <Stack.Screen name="Admin" component={AdminScreen} />
+        <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
