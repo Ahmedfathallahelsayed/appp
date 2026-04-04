@@ -40,7 +40,6 @@ export default function HomeScreen() {
   const [className, setClassName] = useState("");
   const [darkMode, setDarkMode] = useState(false);
 
-  // Settings Modal
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [newFirstName, setNewFirstName] = useState("");
   const [newLastName, setNewLastName] = useState("");
@@ -89,14 +88,10 @@ export default function HomeScreen() {
         Alert.alert("Error", "Name fields cannot be empty");
         return;
       }
-
-      // Update name in Firestore
       await updateDoc(doc(db, "users", userDocId), {
         firstName: newFirstName.trim(),
         lastName: newLastName.trim(),
       });
-
-      // Update password if entered
       if (newPassword.trim().length > 0) {
         if (newPassword.trim().length < 6) {
           Alert.alert("Error", "Password must be at least 6 characters");
@@ -104,7 +99,6 @@ export default function HomeScreen() {
         }
         await updatePassword(auth.currentUser, newPassword.trim());
       }
-
       setUserName(newFirstName.trim() + " " + newLastName.trim());
       setNewPassword("");
       setSettingsVisible(false);
@@ -141,7 +135,6 @@ export default function HomeScreen() {
     return "📚";
   };
 
-  // Dark mode colors
   const theme = {
     bg: darkMode ? "#0f172a" : "#f8fafc",
     card: darkMode ? "#1e293b" : "#ffffff",
@@ -214,13 +207,23 @@ export default function HomeScreen() {
             )}
 
             {role === "admin" && (
-              <TouchableOpacity
-                style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]}
-                onPress={() => nav.navigate("Admin")}
-              >
-                <Text style={styles.quickBtnIcon}>👨‍🏫</Text>
-                <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Instructors</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]}
+                  onPress={() => nav.navigate("Admin")}
+                >
+                  <Text style={styles.quickBtnIcon}>👨‍🏫</Text>
+                  <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Instructors</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]}
+                  onPress={() => nav.navigate("AdminDashboard")}
+                >
+                  <Text style={styles.quickBtnIcon}>📊</Text>
+                  <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Dashboard</Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </ScrollView>
@@ -311,10 +314,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
-      <StatusBar
-        barStyle={darkMode ? "light-content" : "dark-content"}
-        backgroundColor={theme.bg}
-      />
+      <StatusBar barStyle={darkMode ? "light-content" : "dark-content"} backgroundColor={theme.bg} />
 
       {/* Top Bar */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
@@ -323,7 +323,6 @@ export default function HomeScreen() {
           <Text style={[styles.uniText, { color: theme.subText }]}>Cairo University</Text>
         </View>
         <View style={styles.topRight}>
-          {/* Settings Button */}
           <TouchableOpacity
             style={[styles.settingsIcon, { backgroundColor: darkMode ? "#334155" : "#f1f5f9" }]}
             onPress={() => setSettingsVisible(true)}
@@ -369,10 +368,23 @@ export default function HomeScreen() {
         ))}
 
         {role === "admin" && (
-          <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("Admin")}>
-            <Text style={styles.navBtnIcon}>👨‍🏫</Text>
-            <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Instructors</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => nav.navigate("Admin")}
+            >
+              <Text style={styles.navBtnIcon}>👨‍🏫</Text>
+              <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Instructors</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => nav.navigate("AdminDashboard")}
+            >
+              <Text style={styles.navBtnIcon}>📊</Text>
+              <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Dashboard</Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
 
@@ -387,7 +399,6 @@ export default function HomeScreen() {
           <View style={[styles.modalBox, { backgroundColor: theme.card }]}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>⚙️ Settings</Text>
 
-            {/* Name */}
             <Text style={[styles.modalLabel, { color: theme.subText }]}>First Name</Text>
             <TextInput
               style={[styles.modalInput, { backgroundColor: theme.input, color: theme.inputText, borderColor: theme.border }]}
@@ -406,7 +417,6 @@ export default function HomeScreen() {
               placeholderTextColor="#94a3b8"
             />
 
-            {/* Password */}
             <Text style={[styles.modalLabel, { color: theme.subText }]}>New Password</Text>
             <TextInput
               style={[styles.modalInput, { backgroundColor: theme.input, color: theme.inputText, borderColor: theme.border }]}
@@ -417,7 +427,6 @@ export default function HomeScreen() {
               secureTextEntry
             />
 
-            {/* Dark Mode */}
             <View style={[styles.darkModeRow, { borderTopColor: theme.border }]}>
               <Text style={[styles.darkModeLabel, { color: theme.text }]}>🌙 Dark Mode</Text>
               <Switch
@@ -428,7 +437,6 @@ export default function HomeScreen() {
               />
             </View>
 
-            {/* Buttons */}
             <TouchableOpacity style={[styles.saveBtn, { backgroundColor: getRoleColor() }]} onPress={handleSaveSettings}>
               <Text style={styles.saveBtnText}>Save Changes</Text>
             </TouchableOpacity>
@@ -445,62 +453,33 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-
   topBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 3,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 8, elevation: 3,
   },
   facultyText: { fontSize: 15, fontWeight: "800", letterSpacing: 0.3 },
   uniText: { fontSize: 12, marginTop: 1 },
   topRight: { flexDirection: "row", alignItems: "center", gap: 8 },
-
-  settingsIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    justifyContent: "center", alignItems: "center",
-  },
+  settingsIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
   settingsIconText: { fontSize: 18 },
-
-  avatarCircle: {
-    width: 36, height: 36, borderRadius: 18,
-    justifyContent: "center", alignItems: "center",
-  },
+  avatarCircle: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
   avatarText: { color: "white", fontWeight: "800", fontSize: 16 },
-
-  logoutIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "#fee2e2",
-    justifyContent: "center", alignItems: "center",
-  },
+  logoutIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#fee2e2", justifyContent: "center", alignItems: "center" },
   logoutIconText: { fontSize: 16, color: "#dc2626" },
-
   content: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
-
   welcomeCard: {
-    borderRadius: 16, padding: 20,
-    flexDirection: "row", alignItems: "center", gap: 16,
-    borderLeftWidth: 4, marginBottom: 16,
+    borderRadius: 16, padding: 20, flexDirection: "row", alignItems: "center",
+    gap: 16, borderLeftWidth: 4, marginBottom: 16,
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
   welcomeEmoji: { fontSize: 40 },
   welcomeGreeting: { fontSize: 13 },
   welcomeName: { fontSize: 20, fontWeight: "800", marginTop: 2 },
-  roleBadge: {
-    marginTop: 6, alignSelf: "flex-start",
-    paddingHorizontal: 10, paddingVertical: 3,
-    borderRadius: 20, borderWidth: 1,
-  },
+  roleBadge: { marginTop: 6, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   roleBadgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 1 },
-
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
   statCard: {
     flex: 1, borderRadius: 12, padding: 14, alignItems: "center",
@@ -509,21 +488,14 @@ const styles = StyleSheet.create({
   },
   statNumber: { fontSize: 18, fontWeight: "800" },
   statLabel: { fontSize: 11, marginTop: 2 },
-
-  sectionTitle: {
-    fontSize: 13, fontWeight: "700",
-    letterSpacing: 1, textTransform: "uppercase", marginBottom: 12,
-  },
-
+  sectionTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 },
   quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   quickBtn: { flex: 1, minWidth: "44%", borderRadius: 14, padding: 16, alignItems: "center" },
   quickBtnIcon: { fontSize: 28, marginBottom: 6 },
   quickBtnText: { fontSize: 13, fontWeight: "700" },
-
   pageHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20, width: "100%" },
   pageIcon: { fontSize: 28 },
   pageTitle: { fontSize: 24, fontWeight: "800" },
-
   attendanceCard: {
     borderRadius: 16, padding: 24, alignItems: "center", width: "100%",
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
@@ -538,7 +510,6 @@ const styles = StyleSheet.create({
   },
   scanBtnIcon: { fontSize: 20 },
   scanBtnText: { color: "white", fontWeight: "800", fontSize: 15 },
-
   createClassBox: { flexDirection: "row", gap: 10, marginBottom: 16 },
   classInput: { flex: 1, padding: 12, borderRadius: 12, fontSize: 14, borderWidth: 1 },
   createBtn: { backgroundColor: "#10b981", paddingHorizontal: 16, borderRadius: 12, justifyContent: "center" },
@@ -557,7 +528,6 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: "center", paddingVertical: 40 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyText: { fontSize: 14 },
-
   bottomNav: {
     flexDirection: "row", borderTopWidth: 1,
     paddingVertical: 8, paddingHorizontal: 10,
@@ -568,12 +538,7 @@ const styles = StyleSheet.create({
   navBtnIcon: { fontSize: 20, marginBottom: 3 },
   navBtnLabel: { fontSize: 10, fontWeight: "600" },
   navIndicator: { position: "absolute", bottom: -8, width: 4, height: 4, borderRadius: 2 },
-
-  // Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: "#00000077",
-    justifyContent: "flex-end",
-  },
+  modalOverlay: { flex: 1, backgroundColor: "#00000077", justifyContent: "flex-end" },
   modalBox: {
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 40,
@@ -582,24 +547,11 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 20, fontWeight: "800", marginBottom: 20, textAlign: "center" },
   modalLabel: { fontSize: 12, fontWeight: "600", marginBottom: 6, letterSpacing: 0.5 },
-  modalInput: {
-    padding: 12, borderRadius: 12, fontSize: 14,
-    borderWidth: 1, marginBottom: 14,
-  },
-  darkModeRow: {
-    flexDirection: "row", justifyContent: "space-between",
-    alignItems: "center", paddingVertical: 16,
-    borderTopWidth: 1, marginBottom: 16,
-  },
+  modalInput: { padding: 12, borderRadius: 12, fontSize: 14, borderWidth: 1, marginBottom: 14 },
+  darkModeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 16, borderTopWidth: 1, marginBottom: 16 },
   darkModeLabel: { fontSize: 15, fontWeight: "600" },
-  saveBtn: {
-    padding: 14, borderRadius: 14,
-    alignItems: "center", marginBottom: 10,
-  },
+  saveBtn: { padding: 14, borderRadius: 14, alignItems: "center", marginBottom: 10 },
   saveBtnText: { color: "white", fontWeight: "800", fontSize: 15 },
-  cancelBtn: {
-    padding: 14, borderRadius: 14,
-    alignItems: "center", borderWidth: 1,
-  },
+  cancelBtn: { padding: 14, borderRadius: 14, alignItems: "center", borderWidth: 1 },
   cancelBtnText: { fontWeight: "600", fontSize: 15 },
 });
