@@ -173,6 +173,36 @@ export default function HomeScreen() {
     );
   };
 
+  const handleDeleteClass = (classId, classNameToDelete) => {
+    Alert.alert(
+      "Delete Class",
+      `Are you sure you want to delete "${classNameToDelete}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "classes", classId));
+
+              const enrollQ = query(collection(db, "enrollments"), where("classId", "==", classId));
+              const enrollSnap = await getDocs(enrollQ);
+              const deletePromises = enrollSnap.docs.map((d) => deleteDoc(doc(db, "enrollments", d.id)));
+              await Promise.all(deletePromises);
+
+              Alert.alert("✅ Class deleted");
+              loadClasses();
+            } catch (e) {
+              console.log(e);
+              Alert.alert("Error", "Failed to delete class");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleLogout = async () => {
     await signOut(auth);
     nav.replace("Login");
@@ -242,7 +272,6 @@ export default function HomeScreen() {
     navBg: darkMode ? "#1e293b" : "#ffffff",
   };
 
-  // جدول المواد مرتب حسب الأيام
   const getSchedule = () => {
     const schedule = {};
     myClasses.forEach((cls) => {
@@ -344,7 +373,6 @@ export default function HomeScreen() {
                 <Text style={styles.scanBtnText}>Scan QR Code</Text>
               </TouchableOpacity>
 
-              {/* جدول المواد */}
               {myClasses.length > 0 && (
                 <>
                   <Text style={[styles.sectionTitle, { color: theme.subText, marginTop: 20 }]}>MY SCHEDULE</Text>
@@ -370,13 +398,9 @@ export default function HomeScreen() {
                               )}
                             </View>
                             <View style={styles.scheduleTime}>
-                              <Text style={[styles.scheduleTimeText, { color: getRoleColor() }]}>
-                                {cls.fromTime}
-                              </Text>
+                              <Text style={[styles.scheduleTimeText, { color: getRoleColor() }]}>{cls.fromTime}</Text>
                               <Text style={[styles.scheduleTimeSep, { color: theme.subText }]}>→</Text>
-                              <Text style={[styles.scheduleTimeText, { color: getRoleColor() }]}>
-                                {cls.toTime}
-                              </Text>
+                              <Text style={[styles.scheduleTimeText, { color: getRoleColor() }]}>{cls.toTime}</Text>
                             </View>
                           </View>
                         ))}
@@ -507,12 +531,20 @@ export default function HomeScreen() {
                     )}
                   </View>
                 </View>
-                <TouchableOpacity
-                  style={styles.manageBtn}
-                  onPress={() => nav.navigate("ManageClass", { classId: item.id })}
-                >
-                  <Text style={styles.manageBtnText}>Manage →</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <TouchableOpacity
+                    style={styles.manageBtn}
+                    onPress={() => nav.navigate("ManageClass", { classId: item.id })}
+                  >
+                    <Text style={styles.manageBtnText}>Manage →</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => handleDeleteClass(item.id, item.name)}
+                  >
+                    <Text style={styles.deleteBtnText}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
@@ -680,14 +712,11 @@ const styles = StyleSheet.create({
   },
   scanBtnIcon: { fontSize: 20 },
   scanBtnText: { color: "white", fontWeight: "800", fontSize: 15 },
-
-  // Schedule styles
   daySection: { marginBottom: 16 },
   dayHeader: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, marginBottom: 8 },
   dayHeaderText: { color: "white", fontWeight: "800", fontSize: 14 },
   scheduleCard: {
-    flexDirection: "row", alignItems: "center", borderRadius: 12,
-    marginBottom: 8, overflow: "hidden",
+    flexDirection: "row", alignItems: "center", borderRadius: 12, marginBottom: 8, overflow: "hidden",
     shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
   scheduleColorBar: { width: 4, alignSelf: "stretch" },
@@ -698,7 +727,6 @@ const styles = StyleSheet.create({
   scheduleTimeSep: { fontSize: 10, marginVertical: 2 },
   scheduleEmpty: { borderRadius: 12, padding: 20, alignItems: "center", marginTop: 10 },
   scheduleEmptyText: { fontSize: 13, textAlign: "center", lineHeight: 20 },
-
   joinBox: { borderRadius: 16, padding: 20, marginBottom: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 3 },
   joinTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
   joinSub: { fontSize: 13, marginBottom: 14 },
@@ -722,6 +750,8 @@ const styles = StyleSheet.create({
   classCardName: { fontSize: 15, fontWeight: "700" },
   manageBtn: { backgroundColor: "#eff6ff", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
   manageBtnText: { color: "#2563eb", fontWeight: "700", fontSize: 13 },
+  deleteBtn: { backgroundColor: "#fee2e2", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10 },
+  deleteBtnText: { fontSize: 16 },
   leaveBtn: { backgroundColor: "#fee2e2", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
   leaveBtnText: { color: "#dc2626", fontWeight: "700", fontSize: 13 },
   emptyState: { alignItems: "center", paddingVertical: 40 },

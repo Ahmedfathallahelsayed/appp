@@ -95,7 +95,7 @@ export default function ManageClassScreen({ route }) {
   const handleDeleteClass = () => {
     Alert.alert(
       "Delete Class",
-      "Are you sure you want to delete this class? This will also remove all enrolled students.",
+      "Are you sure you want to delete this class?",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -103,20 +103,21 @@ export default function ManageClassScreen({ route }) {
           style: "destructive",
           onPress: async () => {
             try {
-              // حذف الكلاس
+              console.log("Deleting classId:", classId);
               await deleteDoc(doc(db, "classes", classId));
+              console.log("Class deleted successfully");
 
-              // حذف كل الـ enrollments بتاعت الكلاس ده
               const enrollQ = query(collection(db, "enrollments"), where("classId", "==", classId));
               const enrollSnap = await getDocs(enrollQ);
               const deletePromises = enrollSnap.docs.map((d) => deleteDoc(doc(db, "enrollments", d.id)));
               await Promise.all(deletePromises);
+              console.log("Enrollments deleted");
 
               Alert.alert("✅ Class deleted");
               nav.goBack();
             } catch (e) {
-              console.log(e);
-              Alert.alert("Error", "Failed to delete class");
+              console.log("DELETE ERROR:", e.message);
+              Alert.alert("Error", e.message);
             }
           },
         },
