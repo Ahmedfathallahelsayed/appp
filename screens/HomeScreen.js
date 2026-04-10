@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import DigitalID from "./DigitalID";
-import { useRoute } from "@react-navigation/native";
+import { useRoute, useNavigation ,useFocusEffect} from "@react-navigation/native";
 
 import {
   View,
@@ -16,7 +16,6 @@ import {
   Modal,
 } from "react-native";
 
-import { useNavigation } from "@react-navigation/native";
 import { auth, db } from "../firebase";
 import { signOut, updatePassword } from "firebase/auth";
 import {
@@ -45,6 +44,7 @@ export default function HomeScreen() {
   const route = useRoute();
 
   const [userName, setUserName] = useState("");
+  const [studentId, setStudentId] = useState("");
   const [classes, setClasses] = useState([]);
   const [myClasses, setMyClasses] = useState([]);
   const [myEnrollments, setMyEnrollments] = useState([]);
@@ -61,72 +61,173 @@ export default function HomeScreen() {
   const [newPassword, setNewPassword] = useState("");
   const [userDocId, setUserDocId] = useState("");
 
+  const [studentAttendanceCount, setStudentAttendanceCount] = useState(0);
+  const [instructorStudentCount, setInstructorStudentCount] = useState(0);
+  const [instructorAttendanceCount, setInstructorAttendanceCount] = useState(0);
+
   useEffect(() => {
     loadUserData();
-    loadClasses();
   }, []);
 
   useEffect(() => {
-    if (role === "student" && userUid) loadMyClasses();
-  }, [role, userUid]);
+    if (!role || !userUid) return;
+
+    if (role === "student") {
+      loadMyClasses();
+            loadStudentAttendanceCount();
+
+    }
+
+    if (role === "instructor") {
+      loadClasses();
+          loadInstructorDashborasStats();
+
+    }
+  }, [role, userUid,classes.length]);
+
+  useEffect(() => {
+    if (role === "instructor") {
+      loadInstructorDashboardStats();
+    }
+  }, [role, classes]);
 
   const loadUserData = async () => {
     const user = auth.currentUser;
     if (!user) return;
+
     setUserUid(user.uid);
+
     const q = query(collection(db, "users"), where("uid", "==", user.uid));
     const querySnapshot = await getDocs(q);
+
     if (!querySnapshot.empty) {
       const docSnap = querySnapshot.docs[0];
       const data = docSnap.data();
-      setUserName(data.firstName + " " + data.lastName);
-      setRole(data.role);
+
+      setUserName(`${data.firstName || ""} ${data.lastName || ""}`.trim());
+      setRole(data.role || "");
+      setStudentId(data.studentId || "");
       setUserDocId(docSnap.id);
-      setNewFirstName(data.firstName);
-      setNewLastName(data.lastName);
+      setNewFirstName(data.firstName || "");
+      setNewLastName(data.lastName || "");
     }
   };
 
   const loadClasses = async () => {
     const user = auth.currentUser;
     if (!user) return;
+
     const q = query(
       collection(db, "classes"),
-      where("instructorId", "==", user.uid),
+      where("instructorId", "==", user.uid)
     );
+
     const snapshot = await getDocs(q);
     let list = [];
-    snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+
+    snapshot.forEach((d) => {
+      list.push({
+        id: d.id,
+        ...d.data(),
+      });
+    });
+
     setClasses(list);
   };
 
   const loadMyClasses = async () => {
     const user = auth.currentUser;
     if (!user) return;
+
     try {
       const q = query(
         collection(db, "enrollments"),
-        where("studentId", "==", user.uid),
+        where("studentId", "==", user.uid)
       );
       const snapshot = await getDocs(q);
+
       let enrollments = [];
       let classIds = [];
+
       snapshot.forEach((d) => {
         enrollments.push({ enrollId: d.id, ...d.data() });
         classIds.push(d.data().classId);
       });
+
       setMyEnrollments(enrollments);
 
       let classList = [];
       for (let cid of classIds) {
         const classSnap = await getDocs(
-          query(collection(db, "classes"), where("__name__", "==", cid)),
+          query(collection(db, "classes"), where("__name__", "==", cid))
         );
-        classSnap.forEach((d) => classList.push({ id: d.id, ...d.data() }));
+        classSnap.forEach((d) =>
+          classList.push({
+            id: d.id,
+            ...d.data(),
+          })
+        );
       }
+
       setMyClasses(classList);
     } catch (e) {
       console.log(e);
+    }
+  };
+
+  const loadStudentAttendanceCount = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      const q = query(
+        collection(db, "attendance"),
+        where("studentUid", "==", user.uid)
+      );
+      const snapshot = await getDocs(q);
+      setStudentAttendanceCount(snapshot.size);
+    } catch (e) {
+      console.log(e);
+      setStudentAttendanceCount(0);
+    }
+  };
+
+  const loadInstructorDashboardStats = async () => {
+    try {
+      if (classes.length === 0) {
+        setInstructorStudentCount(0);
+        setInstructorAttendanceCount(0);
+        return;
+      }
+
+      const classIds = classes.map((c) => c.id);
+
+      const enrollmentsSnap = await getDocs(collection(db, "enrollments"));
+      const attendanceSnap = await getDocs(collection(db, "attendance"));
+
+      const uniqueStudents = new Set();
+      let attendanceTotal = 0;
+
+      enrollmentsSnap.forEach((d) => {
+        const data = d.data();
+        if (classIds.includes(data.classId)) {
+          uniqueStudents.add(data.studentId);
+        }
+      });
+
+      attendanceSnap.forEach((d) => {
+        const data = d.data();
+        if (classIds.includes(data.classId)) {
+          attendanceTotal += 1;
+        }
+      });
+
+      setInstructorStudentCount(uniqueStudents.size);
+      setInstructorAttendanceCount(attendanceTotal);
+    } catch (e) {
+      console.log(e);
+      setInstructorStudentCount(0);
+      setInstructorAttendanceCount(0);
     }
   };
 
@@ -139,9 +240,8 @@ export default function HomeScreen() {
     try {
       const q = query(
         collection(db, "classes"),
-        where("classCode", "==", joinCode.trim().toUpperCase()),
+        where("classCode", "==", joinCode.trim().toUpperCase())
       );
-
       const snapshot = await getDocs(q);
 
       if (snapshot.empty) {
@@ -150,16 +250,13 @@ export default function HomeScreen() {
       }
 
       const classDoc = snapshot.docs[0];
-      const classData = classDoc.data();
       const classId = classDoc.id;
 
-      // check if already enrolled
       const enrollQ = query(
         collection(db, "enrollments"),
         where("studentId", "==", auth.currentUser.uid),
-        where("classId", "==", classId),
+        where("classId", "==", classId)
       );
-
       const enrollSnap = await getDocs(enrollQ);
 
       if (!enrollSnap.empty) {
@@ -167,22 +264,10 @@ export default function HomeScreen() {
         return;
       }
 
-      // ✅ FIX الكامل هنا
       await addDoc(collection(db, "enrollments"), {
         studentId: auth.currentUser.uid,
         studentName: userName,
-
-        classId: classId,
-        classCode: classData.classCode,
-
-        className: classData.name,
-        day: classData.day,
-
-        fromTime: classData.fromTime,
-        toTime: classData.toTime,
-
-        instructorId: classData.instructorId,
-
+        classId,
         joinedAt: new Date(),
       });
 
@@ -196,67 +281,57 @@ export default function HomeScreen() {
   };
 
   const handleLeaveClass = (classId, className) => {
-    Alert.alert(
-      "Leave Class",
-      `Are you sure you want to leave "${className}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Leave",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const enrollment = myEnrollments.find(
-                (e) => e.classId === classId,
-              );
-              if (enrollment) {
-                await deleteDoc(doc(db, "enrollments", enrollment.enrollId));
-                Alert.alert("✅ You left the class");
-                loadMyClasses();
-              }
-            } catch (e) {
-              console.log(e);
-              Alert.alert("Error", "Failed to leave class");
+    Alert.alert("Leave Class", `Are you sure you want to leave "${className}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const enrollment = myEnrollments.find((e) => e.classId === classId);
+            if (enrollment) {
+              await deleteDoc(doc(db, "enrollments", enrollment.enrollId));
+              Alert.alert("✅ You left the class");
+              loadMyClasses();
             }
-          },
+          } catch (e) {
+            console.log(e);
+            Alert.alert("Error", "Failed to leave class");
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleDeleteClass = (classId, classNameToDelete) => {
-    Alert.alert(
-      "Delete Class",
-      `Are you sure you want to delete "${classNameToDelete}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, "classes", classId));
+    Alert.alert("Delete Class", `Are you sure you want to delete "${classNameToDelete}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "classes", classId));
 
-              const enrollQ = query(
-                collection(db, "enrollments"),
-                where("classId", "==", classId),
-              );
-              const enrollSnap = await getDocs(enrollQ);
-              const deletePromises = enrollSnap.docs.map((d) =>
-                deleteDoc(doc(db, "enrollments", d.id)),
-              );
-              await Promise.all(deletePromises);
+            const enrollQ = query(
+              collection(db, "enrollments"),
+              where("classId", "==", classId)
+            );
+            const enrollSnap = await getDocs(enrollQ);
+            const deletePromises = enrollSnap.docs.map((d) =>
+              deleteDoc(doc(db, "enrollments", d.id))
+            );
+            await Promise.all(deletePromises);
 
-              Alert.alert("✅ Class deleted");
-              loadClasses();
-            } catch (e) {
-              console.log(e);
-              Alert.alert("Error", "Failed to delete class");
-            }
-          },
+            Alert.alert("✅ Class deleted");
+            loadClasses();
+          } catch (e) {
+            console.log(e);
+            Alert.alert("Error", "Failed to delete class");
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleLogout = async () => {
@@ -270,10 +345,12 @@ export default function HomeScreen() {
         Alert.alert("Error", "Name fields cannot be empty");
         return;
       }
+
       await updateDoc(doc(db, "users", userDocId), {
         firstName: newFirstName.trim(),
         lastName: newLastName.trim(),
       });
+
       if (newPassword.trim().length > 0) {
         if (newPassword.trim().length < 6) {
           Alert.alert("Error", "Password must be at least 6 characters");
@@ -281,16 +358,14 @@ export default function HomeScreen() {
         }
         await updatePassword(auth.currentUser, newPassword.trim());
       }
-      setUserName(newFirstName.trim() + " " + newLastName.trim());
+
+      setUserName(`${newFirstName.trim()} ${newLastName.trim()}`);
       setNewPassword("");
       setSettingsVisible(false);
       Alert.alert("✅ Success", "Settings saved successfully");
     } catch (error) {
       console.log(error);
-      Alert.alert(
-        "Error",
-        "Failed to save settings. Please re-login and try again.",
-      );
+      Alert.alert("Error", "Failed to save settings. Please re-login and try again.");
     }
   };
 
@@ -299,12 +374,14 @@ export default function HomeScreen() {
       Alert.alert("Enter class name");
       return;
     }
+
     try {
       await addDoc(collection(db, "classes"), {
         name: className,
         instructorId: auth.currentUser.uid,
         createdAt: new Date(),
       });
+
       Alert.alert("Class created");
       setClassName("");
       loadClasses();
@@ -347,13 +424,180 @@ export default function HomeScreen() {
     return schedule;
   };
 
+  const renderDashboardStats = () => {
+    if (role === "student") {
+      return (
+        <>
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#6366f1" }]}>
+                {myClasses.length}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Enrolled Classes
+              </Text>
+            </View>
+
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#10b981" }]}>
+                {studentAttendanceCount}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Lectures Attended
+              </Text>
+            </View>
+
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#f59e0b" }]}>
+                {studentId || "—"}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Student ID
+              </Text>
+            </View>
+          </View>
+
+          {myClasses.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { color: theme.subText }]}>
+                ENROLLED CLASSES PREVIEW
+              </Text>
+              {myClasses.slice(0, 3).map((item) => (
+                <View
+                  key={item.id}
+                  style={[styles.classCard, { backgroundColor: theme.card }]}
+                >
+                  <View style={styles.classCardLeft}>
+                    <Text style={styles.classCardIcon}>📖</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.classCardName, { color: theme.text }]}
+                      >
+                        {item.name}
+                      </Text>
+                      {item.classCode && (
+                        <Text
+                          style={[styles.classCode, { color: theme.subText }]}
+                        >
+                          Code: {item.classCode}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+        </>
+      );
+    }
+
+    if (role === "instructor") {
+      return (
+        <>
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#10b981" }]}>
+                {classes.length}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                My Classes
+              </Text>
+            </View>
+
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#6366f1" }]}>
+                {instructorStudentCount}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Enrolled Students
+              </Text>
+            </View>
+
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#f59e0b" }]}>
+                {instructorAttendanceCount}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Attendance Records
+              </Text>
+            </View>
+          </View>
+
+          {classes.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { color: theme.subText }]}>
+                RECENT CLASSES
+              </Text>
+              {classes.slice(0, 3).map((item) => (
+                <View
+                  key={item.id}
+                  style={[styles.classCard, { backgroundColor: theme.card }]}
+                >
+                  <View style={styles.classCardLeft}>
+                    <Text style={styles.classCardIcon}>🏫</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.classCardName, { color: theme.text }]}
+                      >
+                        {item.name}
+                      </Text>
+                      {item.classCode && (
+                        <Text
+                          style={[styles.classCode, { color: theme.subText }]}
+                        >
+                          Code: {item.classCode}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.manageBtn}
+                    onPress={() => nav.navigate("ManageClass", { classId: item.id })}
+                  >
+                    <Text style={styles.manageBtnText}>Manage →</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </>
+          )}
+        </>
+      );
+    }
+
+    return (
+      <>
+        <View style={styles.statsRow}>
+          <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+            <Text style={[styles.statNumber, { color: "#f59e0b" }]}>Admin</Text>
+            <Text style={[styles.statLabel, { color: theme.subText }]}>
+              Access Level
+            </Text>
+          </View>
+
+          <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+            <Text style={[styles.statNumber, { color: "#2563eb" }]}>Users</Text>
+            <Text style={[styles.statLabel, { color: theme.subText }]}>
+              Management
+            </Text>
+          </View>
+
+          <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+            <Text style={[styles.statNumber, { color: "#10b981" }]}>Data</Text>
+            <Text style={[styles.statLabel, { color: theme.subText }]}>
+              Overview
+            </Text>
+          </View>
+        </View>
+      </>
+    );
+  };
+
   const renderContent = () => {
     if (page === "dashboard") {
       return (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          style={{ width: "100%" }}
-        >
+        <ScrollView showsVerticalScrollIndicator={false} style={{ width: "100%" }}>
           <View
             style={[
               styles.welcomeCard,
@@ -377,58 +621,24 @@ export default function HomeScreen() {
                   },
                 ]}
               >
-                <Text style={[styles.roleBadgeText, { color: getRoleColor() }]}>
+                <Text
+                  style={[styles.roleBadgeText, { color: getRoleColor() }]}
+                >
                   {role?.toUpperCase()}
                 </Text>
               </View>
             </View>
           </View>
 
-          <View style={styles.statsRow}>
-            {[
-              { num: "Cairo", label: "University" },
-              { num: "Sci", label: "Faculty" },
-              {
-                num:
-                  role === "instructor"
-                    ? classes.length
-                    : role === "student"
-                      ? myClasses.length
-                      : "—",
-                label:
-                  role === "instructor"
-                    ? "Classes"
-                    : role === "student"
-                      ? "Enrolled"
-                      : "Active",
-                color: getRoleColor(),
-              },
-            ].map((s, i) => (
-              <View
-                key={i}
-                style={[styles.statCard, { backgroundColor: theme.card }]}
-              >
-                <Text
-                  style={[styles.statNumber, { color: s.color || theme.text }]}
-                >
-                  {s.num}
-                </Text>
-                <Text style={[styles.statLabel, { color: theme.subText }]}>
-                  {s.label}
-                </Text>
-              </View>
-            ))}
-          </View>
+          {renderDashboardStats()}
 
           <Text style={[styles.sectionTitle, { color: theme.subText }]}>
             Quick Actions
           </Text>
+
           <View style={styles.quickActions}>
             <TouchableOpacity
-              style={[
-                styles.quickBtn,
-                { backgroundColor: getRoleColor() + "15" },
-              ]}
+              style={[styles.quickBtn, { backgroundColor: getRoleColor() + "15" }]}
               onPress={() => setPage("attendance")}
             >
               <Text style={styles.quickBtnIcon}>📋</Text>
@@ -448,6 +658,7 @@ export default function HomeScreen() {
                     Digital ID
                   </Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   style={[styles.quickBtn, { backgroundColor: "#6366f115" }]}
                   onPress={() => setPage("myClasses")}
@@ -483,6 +694,7 @@ export default function HomeScreen() {
                     Instructors
                   </Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]}
                   onPress={() => nav.navigate("AdminDashboard")}
@@ -504,10 +716,7 @@ export default function HomeScreen() {
       const sortedDays = DAYS_ORDER.filter((d) => schedule[d]);
 
       return (
-        <ScrollView
-          style={{ width: "100%" }}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
           <View style={styles.pageHeader}>
             <Text style={styles.pageIcon}>📋</Text>
             <Text style={[styles.pageTitle, { color: theme.text }]}>
@@ -535,12 +744,10 @@ export default function HomeScreen() {
                   >
                     MY SCHEDULE
                   </Text>
+
                   {sortedDays.length === 0 ? (
                     <View
-                      style={[
-                        styles.scheduleEmpty,
-                        { backgroundColor: theme.card },
-                      ]}
+                      style={[styles.scheduleEmpty, { backgroundColor: theme.card }]}
                     >
                       <Text
                         style={[
@@ -548,8 +755,7 @@ export default function HomeScreen() {
                           { color: theme.subText },
                         ]}
                       >
-                        No schedule set yet. Ask your instructor to add class
-                        times.
+                        No schedule set yet. Ask your instructor to add class times.
                       </Text>
                     </View>
                   ) : (
@@ -563,6 +769,7 @@ export default function HomeScreen() {
                         >
                           <Text style={styles.dayHeaderText}>{day}</Text>
                         </View>
+
                         {schedule[day].map((cls) => (
                           <View
                             key={cls.id}
@@ -652,10 +859,7 @@ export default function HomeScreen() {
 
     if (page === "myClasses" && role === "student") {
       return (
-        <ScrollView
-          style={{ width: "100%" }}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
           <View style={styles.pageHeader}>
             <Text style={styles.pageIcon}>📚</Text>
             <Text style={[styles.pageTitle, { color: theme.text }]}>
@@ -670,6 +874,7 @@ export default function HomeScreen() {
             <Text style={[styles.joinSub, { color: theme.subText }]}>
               Enter the class code to enroll
             </Text>
+
             <View style={styles.joinRow}>
               <TextInput
                 style={[
@@ -686,10 +891,7 @@ export default function HomeScreen() {
                 onChangeText={setJoinCode}
                 autoCapitalize="characters"
               />
-              <TouchableOpacity
-                style={styles.joinBtn}
-                onPress={handleJoinClass}
-              >
+              <TouchableOpacity style={styles.joinBtn} onPress={handleJoinClass}>
                 <Text style={styles.joinBtnText}>Join</Text>
               </TouchableOpacity>
             </View>
@@ -720,7 +922,9 @@ export default function HomeScreen() {
                 <View style={styles.classCardLeft}>
                   <Text style={styles.classCardIcon}>📖</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.classCardName, { color: theme.text }]}>
+                    <Text
+                      style={[styles.classCardName, { color: theme.text }]}
+                    >
                       {item.name}
                     </Text>
                     {item.classCode && (
@@ -732,13 +936,17 @@ export default function HomeScreen() {
                     )}
                     {item.day && (
                       <Text
-                        style={[styles.classSchedule, { color: theme.subText }]}
+                        style={[
+                          styles.classSchedule,
+                          { color: theme.subText },
+                        ]}
                       >
                         📅 {item.day} {item.fromTime} - {item.toTime}
                       </Text>
                     )}
                   </View>
                 </View>
+
                 <TouchableOpacity
                   style={styles.leaveBtn}
                   onPress={() => handleLeaveClass(item.id, item.name)}
@@ -754,16 +962,14 @@ export default function HomeScreen() {
 
     if (page === "classes" && role === "instructor") {
       return (
-        <ScrollView
-          style={{ width: "100%" }}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
           <View style={styles.pageHeader}>
             <Text style={styles.pageIcon}>🏫</Text>
             <Text style={[styles.pageTitle, { color: theme.text }]}>
               My Classes
             </Text>
           </View>
+
           <View style={styles.createClassBox}>
             <TextInput
               style={[
@@ -779,10 +985,12 @@ export default function HomeScreen() {
               value={className}
               onChangeText={setClassName}
             />
+
             <TouchableOpacity style={styles.createBtn} onPress={createClass}>
               <Text style={styles.createBtnText}>+ Create</Text>
             </TouchableOpacity>
           </View>
+
           {classes.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🏫</Text>
@@ -799,7 +1007,9 @@ export default function HomeScreen() {
                 <View style={styles.classCardLeft}>
                   <Text style={styles.classCardIcon}>📖</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.classCardName, { color: theme.text }]}>
+                    <Text
+                      style={[styles.classCardName, { color: theme.text }]}
+                    >
                       {item.name}
                     </Text>
                     {item.classCode && (
@@ -811,21 +1021,32 @@ export default function HomeScreen() {
                     )}
                     {item.day && (
                       <Text
-                        style={[styles.classSchedule, { color: theme.subText }]}
+                        style={[
+                          styles.classSchedule,
+                          { color: theme.subText },
+                        ]}
                       >
                         📅 {item.day} {item.fromTime} - {item.toTime}
                       </Text>
                     )}
                   </View>
                 </View>
-                <TouchableOpacity
-                  style={styles.manageBtn}
-                  onPress={() =>
-                    nav.navigate("ManageClass", { classId: item.id })
-                  }
-                >
-                  <Text style={styles.manageBtnText}>Manage →</Text>
-                </TouchableOpacity>
+
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <TouchableOpacity
+                    style={styles.manageBtn}
+                    onPress={() => nav.navigate("ManageClass", { classId: item.id })}
+                  >
+                    <Text style={styles.manageBtnText}>Manage →</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => handleDeleteClass(item.id, item.name)}
+                  >
+                    <Text style={styles.deleteBtnText}>🗑️</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
@@ -871,6 +1092,7 @@ export default function HomeScreen() {
             Cairo University
           </Text>
         </View>
+
         <View style={styles.topRight}>
           <TouchableOpacity
             style={[
@@ -881,13 +1103,13 @@ export default function HomeScreen() {
           >
             <Text style={styles.settingsIconText}>⚙️</Text>
           </TouchableOpacity>
-          <View
-            style={[styles.avatarCircle, { backgroundColor: getRoleColor() }]}
-          >
+
+          <View style={[styles.avatarCircle, { backgroundColor: getRoleColor() }]}>
             <Text style={styles.avatarText}>
               {userName ? userName.charAt(0).toUpperCase() : "?"}
             </Text>
           </View>
+
           <TouchableOpacity style={styles.logoutIcon} onPress={handleLogout}>
             <Text style={styles.logoutIconText}>⏻</Text>
           </TouchableOpacity>
@@ -923,10 +1145,7 @@ export default function HomeScreen() {
             </Text>
             {page === btn.key && (
               <View
-                style={[
-                  styles.navIndicator,
-                  { backgroundColor: getRoleColor() },
-                ]}
+                style={[styles.navIndicator, { backgroundColor: getRoleColor() }]}
               />
             )}
           </TouchableOpacity>
@@ -934,15 +1153,13 @@ export default function HomeScreen() {
 
         {role === "admin" && (
           <>
-            <TouchableOpacity
-              style={styles.navBtn}
-              onPress={() => nav.navigate("Admin")}
-            >
+            <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("Admin")}>
               <Text style={styles.navBtnIcon}>👨‍🏫</Text>
               <Text style={[styles.navBtnLabel, { color: theme.subText }]}>
                 Instructors
               </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.navBtn}
               onPress={() => nav.navigate("AdminDashboard")}
@@ -1023,9 +1240,7 @@ export default function HomeScreen() {
               secureTextEntry
             />
 
-            <View
-              style={[styles.darkModeRow, { borderTopColor: theme.border }]}
-            >
+            <View style={[styles.darkModeRow, { borderTopColor: theme.border }]}>
               <Text style={[styles.darkModeLabel, { color: theme.text }]}>
                 🌙 Dark Mode
               </Text>
@@ -1061,6 +1276,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
+
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1074,9 +1290,24 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  facultyText: { fontSize: 15, fontWeight: "800", letterSpacing: 0.3 },
-  uniText: { fontSize: 12, marginTop: 1 },
-  topRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+
+  facultyText: {
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+
+  uniText: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+
+  topRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
   settingsIcon: {
     width: 36,
     height: 36,
@@ -1084,7 +1315,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  settingsIconText: { fontSize: 18 },
+
+  settingsIconText: {
+    fontSize: 18,
+  },
+
   avatarCircle: {
     width: 36,
     height: 36,
@@ -1092,7 +1327,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: { color: "white", fontWeight: "800", fontSize: 16 },
+
+  avatarText: {
+    color: "white",
+    fontWeight: "800",
+    fontSize: 16,
+  },
+
   logoutIcon: {
     width: 36,
     height: 36,
@@ -1101,8 +1342,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  logoutIconText: { fontSize: 16, color: "#dc2626" },
-  content: { flex: 1, paddingHorizontal: 20, paddingTop: 20 },
+
+  logoutIconText: {
+    fontSize: 16,
+    color: "#dc2626",
+  },
+
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+
   welcomeCard: {
     borderRadius: 16,
     padding: 20,
@@ -1117,9 +1368,21 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
   },
-  welcomeEmoji: { fontSize: 40 },
-  welcomeGreeting: { fontSize: 13 },
-  welcomeName: { fontSize: 20, fontWeight: "800", marginTop: 2 },
+
+  welcomeEmoji: {
+    fontSize: 40,
+  },
+
+  welcomeGreeting: {
+    fontSize: 13,
+  },
+
+  welcomeName: {
+    fontSize: 20,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+
   roleBadge: {
     marginTop: 6,
     alignSelf: "flex-start",
@@ -1128,8 +1391,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  roleBadgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 1 },
-  statsRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
+
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
+  },
+
   statCard: {
     flex: 1,
     borderRadius: 12,
@@ -1141,8 +1415,17 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  statNumber: { fontSize: 18, fontWeight: "800" },
-  statLabel: { fontSize: 11, marginTop: 2 },
+
+  statNumber: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  statLabel: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+
   sectionTitle: {
     fontSize: 13,
     fontWeight: "700",
@@ -1150,7 +1433,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 12,
   },
-  quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+
+  quickActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
   quickBtn: {
     flex: 1,
     minWidth: "44%",
@@ -1158,8 +1447,17 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: "center",
   },
-  quickBtnIcon: { fontSize: 28, marginBottom: 6 },
-  quickBtnText: { fontSize: 13, fontWeight: "700" },
+
+  quickBtnIcon: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+
+  quickBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
   pageHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1167,8 +1465,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     width: "100%",
   },
-  pageIcon: { fontSize: 28 },
-  pageTitle: { fontSize: 24, fontWeight: "800" },
+
+  pageIcon: {
+    fontSize: 28,
+  },
+
+  pageTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+  },
+
   attendanceCard: {
     borderRadius: 16,
     padding: 24,
@@ -1180,7 +1486,13 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
   },
-  attendanceInfo: { fontSize: 14, textAlign: "center", lineHeight: 22 },
+
+  attendanceInfo: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+
   scanBtn: {
     backgroundColor: "#6366f1",
     flexDirection: "row",
@@ -1196,16 +1508,34 @@ const styles = StyleSheet.create({
     elevation: 5,
     alignSelf: "center",
   },
-  scanBtnIcon: { fontSize: 20 },
-  scanBtnText: { color: "white", fontWeight: "800", fontSize: 15 },
-  daySection: { marginBottom: 16 },
+
+  scanBtnIcon: {
+    fontSize: 20,
+  },
+
+  scanBtnText: {
+    color: "white",
+    fontWeight: "800",
+    fontSize: 15,
+  },
+
+  daySection: {
+    marginBottom: 16,
+  },
+
   dayHeader: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
     marginBottom: 8,
   },
-  dayHeaderText: { color: "white", fontWeight: "800", fontSize: 14 },
+
+  dayHeaderText: {
+    color: "white",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+
   scheduleCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -1218,34 +1548,55 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  scheduleColorBar: { width: 4, alignSelf: "stretch" },
+
+  scheduleColorBar: {
+    width: 4,
+    alignSelf: "stretch",
+  },
+
   scheduleClassName: {
     fontSize: 14,
     fontWeight: "700",
     paddingLeft: 12,
     paddingTop: 12,
   },
+
   scheduleCode: {
     fontSize: 11,
     paddingLeft: 12,
     paddingBottom: 12,
     marginTop: 2,
   },
+
   scheduleTime: {
     flexDirection: "column",
     alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
-  scheduleTimeText: { fontSize: 12, fontWeight: "700" },
-  scheduleTimeSep: { fontSize: 10, marginVertical: 2 },
+
+  scheduleTimeText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  scheduleTimeSep: {
+    fontSize: 10,
+    marginVertical: 2,
+  },
+
   scheduleEmpty: {
     borderRadius: 12,
     padding: 20,
     alignItems: "center",
     marginTop: 10,
   },
-  scheduleEmptyText: { fontSize: 13, textAlign: "center", lineHeight: 20 },
+
+  scheduleEmptyText: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 20,
+  },
 
   joinBox: {
     borderRadius: 16,
@@ -1257,9 +1608,23 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 3,
   },
-  joinTitle: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
-  joinSub: { fontSize: 13, marginBottom: 14 },
-  joinRow: { flexDirection: "row", gap: 10 },
+
+  joinTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+
+  joinSub: {
+    fontSize: 13,
+    marginBottom: 14,
+  },
+
+  joinRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
   joinInput: {
     flex: 1,
     padding: 12,
@@ -1267,16 +1632,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     borderWidth: 1,
   },
+
   joinBtn: {
     backgroundColor: "#6366f1",
     paddingHorizontal: 20,
     borderRadius: 12,
     justifyContent: "center",
   },
-  joinBtnText: { color: "white", fontWeight: "800", fontSize: 14 },
-  classCode: { fontSize: 11, marginTop: 2 },
-  classSchedule: { fontSize: 11, marginTop: 2 },
-  createClassBox: { flexDirection: "row", gap: 10, marginBottom: 16 },
+
+  joinBtnText: {
+    color: "white",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+
+  classCode: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  classSchedule: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  createClassBox: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+  },
+
   classInput: {
     flex: 1,
     padding: 12,
@@ -1284,13 +1669,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     borderWidth: 1,
   },
+
   createBtn: {
     backgroundColor: "#10b981",
     paddingHorizontal: 16,
     borderRadius: 12,
     justifyContent: "center",
   },
-  createBtnText: { color: "white", fontWeight: "800", fontSize: 14 },
+
+  createBtnText: {
+    color: "white",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+
   classCard: {
     borderRadius: 14,
     padding: 16,
@@ -1304,31 +1696,74 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
+
   classCardLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     flex: 1,
   },
-  classCardIcon: { fontSize: 22 },
-  classCardName: { fontSize: 15, fontWeight: "700" },
+
+  classCardIcon: {
+    fontSize: 22,
+  },
+
+  classCardName: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
   manageBtn: {
     backgroundColor: "#eff6ff",
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 10,
   },
-  manageBtnText: { color: "#2563eb", fontWeight: "700", fontSize: 13 },
+
+  manageBtnText: {
+    color: "#2563eb",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+
+  deleteBtn: {
+    backgroundColor: "#fee2e2",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+
+  deleteBtnText: {
+    fontSize: 16,
+  },
+
   leaveBtn: {
     backgroundColor: "#fee2e2",
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 10,
   },
-  leaveBtnText: { color: "#dc2626", fontWeight: "700", fontSize: 13 },
-  emptyState: { alignItems: "center", paddingVertical: 40 },
-  emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyText: { fontSize: 14 },
+
+  leaveBtnText: {
+    color: "#dc2626",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+
+  emptyText: {
+    fontSize: 14,
+  },
+
   bottomNav: {
     flexDirection: "row",
     borderTopWidth: 1,
@@ -1340,14 +1775,24 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 10,
   },
+
   navBtn: {
     flex: 1,
     alignItems: "center",
     paddingVertical: 6,
     position: "relative",
   },
-  navBtnIcon: { fontSize: 20, marginBottom: 3 },
-  navBtnLabel: { fontSize: 10, fontWeight: "600" },
+
+  navBtnIcon: {
+    fontSize: 20,
+    marginBottom: 3,
+  },
+
+  navBtnLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
   navIndicator: {
     position: "absolute",
     bottom: -8,
@@ -1355,11 +1800,13 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: "#00000077",
     justifyContent: "flex-end",
   },
+
   modalBox: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -1371,18 +1818,21 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 20,
   },
+
   modalTitle: {
     fontSize: 20,
     fontWeight: "800",
     marginBottom: 20,
     textAlign: "center",
   },
+
   modalLabel: {
     fontSize: 12,
     fontWeight: "600",
     marginBottom: 6,
     letterSpacing: 0.5,
   },
+
   modalInput: {
     padding: 12,
     borderRadius: 12,
@@ -1390,6 +1840,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 14,
   },
+
   darkModeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1398,19 +1849,34 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     marginBottom: 16,
   },
-  darkModeLabel: { fontSize: 15, fontWeight: "600" },
+
+  darkModeLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+
   saveBtn: {
     padding: 14,
     borderRadius: 14,
     alignItems: "center",
     marginBottom: 10,
   },
-  saveBtnText: { color: "white", fontWeight: "800", fontSize: 15 },
+
+  saveBtnText: {
+    color: "white",
+    fontWeight: "800",
+    fontSize: 15,
+  },
+
   cancelBtn: {
     padding: 14,
     borderRadius: 14,
     alignItems: "center",
     borderWidth: 1,
   },
-  cancelBtnText: { fontWeight: "600", fontSize: 15 },
+
+  cancelBtnText: {
+    fontWeight: "600",
+    fontSize: 15,
+  },
 });
