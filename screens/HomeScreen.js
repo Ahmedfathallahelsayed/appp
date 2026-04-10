@@ -224,6 +224,41 @@ export default function HomeScreen() {
     );
   };
 
+  const handleDeleteClass = (classId, classNameToDelete) => {
+    Alert.alert(
+      "Delete Class",
+      `Are you sure you want to delete "${classNameToDelete}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "classes", classId));
+
+              const enrollQ = query(
+                collection(db, "enrollments"),
+                where("classId", "==", classId),
+              );
+              const enrollSnap = await getDocs(enrollQ);
+              const deletePromises = enrollSnap.docs.map((d) =>
+                deleteDoc(doc(db, "enrollments", d.id)),
+              );
+              await Promise.all(deletePromises);
+
+              Alert.alert("✅ Class deleted");
+              loadClasses();
+            } catch (e) {
+              console.log(e);
+              Alert.alert("Error", "Failed to delete class");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleLogout = async () => {
     await signOut(auth);
     nav.replace("Login");
@@ -301,7 +336,6 @@ export default function HomeScreen() {
     navBg: darkMode ? "#1e293b" : "#ffffff",
   };
 
-  // جدول المواد مرتب حسب الأيام
   const getSchedule = () => {
     const schedule = {};
     myClasses.forEach((cls) => {
@@ -491,7 +525,6 @@ export default function HomeScreen() {
                 <Text style={styles.scanBtnText}>Scan QR Code</Text>
               </TouchableOpacity>
 
-              {/* جدول المواد */}
               {myClasses.length > 0 && (
                 <>
                   <Text
@@ -1165,8 +1198,6 @@ const styles = StyleSheet.create({
   },
   scanBtnIcon: { fontSize: 20 },
   scanBtnText: { color: "white", fontWeight: "800", fontSize: 15 },
-
-  // Schedule styles
   daySection: { marginBottom: 16 },
   dayHeader: {
     paddingHorizontal: 14,
