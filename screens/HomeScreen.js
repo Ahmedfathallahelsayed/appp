@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import DigitalID from "./DigitalID";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
-
+import ChatAssistant from "./ChatAssistant";
 import {
   View,
   Text,
@@ -943,6 +943,22 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+      <ChatAssistant
+  role={role}
+  data={{
+    studentAttendanceRate: studentAttendanceCount,
+    studentEnrollments: myClasses,
+    todayStudentClasses: myClasses.filter((c) => c.day === new Date().toLocaleDateString("en-US", { weekday: "long" })),
+    studentActivityFeed: myClasses.map((c) => ({ text: `Joined class ${c.name}` })),
+
+    totalEnrolledStudents: instructorStudentCount,
+    instructorAttendanceRate: instructorAttendanceCount,
+    sessionsThisWeek: classes.length,
+    instructorClasses: classes,
+    todayInstructorClasses: classes.filter((c) => c.day === new Date().toLocaleDateString("en-US", { weekday: "long" })),
+    instructorActivityFeed: classes.map((c) => ({ text: `Created or manages class ${c.name}` })),
+  }}
+/>
     </SafeAreaView>
   );
 }
