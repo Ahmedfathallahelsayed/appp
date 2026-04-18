@@ -769,17 +769,17 @@ export default function HomeScreen() {
         ))}
 
         {role === "admin" && (
-          <>
-            <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("Admin")}>
-              <Text style={styles.navBtnIcon}>👨‍🏫</Text>
-              <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Instructors</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("AdminDashboard")}>
-              <Text style={styles.navBtnIcon}>📊</Text>
-              <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Dashboard</Text>
-            </TouchableOpacity>
-          </>
-        )}
+  <>
+    <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("Admin")}>
+      <Text style={styles.navBtnIcon}>👨‍🏫</Text>
+      <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Instructors</Text>
+    </TouchableOpacity>
+    <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("AdminDashboard")}>
+      <Text style={styles.navBtnIcon}>📊</Text>
+      <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Dashboard</Text>
+    </TouchableOpacity>
+  </>
+)}
       </View>
 
       {/* Settings Modal */}
