@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import DigitalID from "./DigitalID";
-import { useRoute } from "@react-navigation/native";
-
+import { useRoute, useNavigation } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
+import ChatAssistant from "./ChatAssistant";
 import {
   View,
   Text,
@@ -14,9 +15,9 @@ import {
   StatusBar,
   Switch,
   Modal,
+  Image,
 } from "react-native";
 
-import { useNavigation } from "@react-navigation/native";
 import { auth, db } from "../firebase";
 import { signOut, updatePassword } from "firebase/auth";
 import {
@@ -30,13 +31,20 @@ import {
   doc,
 } from "firebase/firestore";
 
-const DAYS_ORDER = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const DAYS_ORDER = [
+  "Saturday", "Sunday", "Monday", "Tuesday",
+  "Wednesday", "Thursday", "Friday",
+];
 
 export default function HomeScreen() {
   const nav = useNavigation();
   const route = useRoute();
 
   const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userDepartment, setUserDepartment] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [profileImage, setProfileImage] = useState(null);
   const [classes, setClasses] = useState([]);
   const [myClasses, setMyClasses] = useState([]);
   const [myEnrollments, setMyEnrollments] = useState([]);
@@ -48,34 +56,57 @@ export default function HomeScreen() {
   const [userUid, setUserUid] = useState("");
 
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [profileVisible, setProfileVisible] = useState(false);
   const [newFirstName, setNewFirstName] = useState("");
   const [newLastName, setNewLastName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [userDocId, setUserDocId] = useState("");
 
+  const [studentAttendanceCount, setStudentAttendanceCount] = useState(0);
+  const [instructorStudentCount, setInstructorStudentCount] = useState(0);
+  const [instructorAttendanceCount, setInstructorAttendanceCount] = useState(0);
+
   useEffect(() => {
     loadUserData();
-    loadClasses();
   }, []);
 
   useEffect(() => {
-    if (role === "student" && userUid) loadMyClasses();
+    if (!role || !userUid) return;
+    if (role === "student") {
+      loadMyClasses();
+      loadStudentAttendanceCount();
+    }
+    if (role === "instructor") {
+      loadClasses();
+    }
   }, [role, userUid]);
+
+  useEffect(() => {
+    if (role === "instructor") {
+      loadInstructorDashboardStats();
+    }
+  }, [role, classes]);
 
   const loadUserData = async () => {
     const user = auth.currentUser;
     if (!user) return;
     setUserUid(user.uid);
+    setUserEmail(user.email || "");
+
     const q = query(collection(db, "users"), where("uid", "==", user.uid));
     const querySnapshot = await getDocs(q);
+
     if (!querySnapshot.empty) {
       const docSnap = querySnapshot.docs[0];
       const data = docSnap.data();
-      setUserName(data.firstName + " " + data.lastName);
-      setRole(data.role);
+      setUserName(`${data.firstName || ""} ${data.lastName || ""}`.trim());
+      setRole(data.role || "");
+      setStudentId(data.studentId || "");
       setUserDocId(docSnap.id);
-      setNewFirstName(data.firstName);
-      setNewLastName(data.lastName);
+      setNewFirstName(data.firstName || "");
+      setNewLastName(data.lastName || "");
+      setUserDepartment(data.department || "Faculty of Science");
+      setProfileImage(data.profileImage || null);
     }
   };
 
@@ -102,7 +133,6 @@ export default function HomeScreen() {
         classIds.push(d.data().classId);
       });
       setMyEnrollments(enrollments);
-
       let classList = [];
       for (let cid of classIds) {
         const classSnap = await getDocs(query(collection(db, "classes"), where("__name__", "==", cid)));
@@ -112,16 +142,91 @@ export default function HomeScreen() {
     } catch (e) { console.log(e); }
   };
 
+  const loadStudentAttendanceCount = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const q = query(collection(db, "attendance"), where("studentUid", "==", user.uid));
+      const snapshot = await getDocs(q);
+      setStudentAttendanceCount(snapshot.size);
+    } catch (e) {
+      setStudentAttendanceCount(0);
+    }
+  };
+
+  const loadInstructorDashboardStats = async () => {
+    try {
+      if (classes.length === 0) {
+        setInstructorStudentCount(0);
+        setInstructorAttendanceCount(0);
+        return;
+      }
+      const classIds = classes.map((c) => c.id);
+      const enrollmentsSnap = await getDocs(collection(db, "enrollments"));
+      const attendanceSnap = await getDocs(collection(db, "attendance"));
+      const uniqueStudents = new Set();
+      let attendanceTotal = 0;
+      enrollmentsSnap.forEach((d) => {
+        const data = d.data();
+        if (classIds.includes(data.classId)) uniqueStudents.add(data.studentId);
+      });
+      attendanceSnap.forEach((d) => {
+        const data = d.data();
+        if (classIds.includes(data.classId)) attendanceTotal += 1;
+      });
+      setInstructorStudentCount(uniqueStudents.size);
+      setInstructorAttendanceCount(attendanceTotal);
+    } catch (e) {
+      setInstructorStudentCount(0);
+      setInstructorAttendanceCount(0);
+    }
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Please allow access to your photos");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+      base64: true,
+    });
+    if (!result.canceled) {
+      const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      setProfileImage(base64Image);
+      // حفظ في Firestore
+      await updateDoc(doc(db, "users", userDocId), {
+        profileImage: base64Image,
+      });
+    }
+  };
+
+  const removeImage = async () => {
+    Alert.alert("Remove Photo", "Are you sure?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          setProfileImage(null);
+          await updateDoc(doc(db, "users", userDocId), { profileImage: null });
+        },
+      },
+    ]);
+  };
+
   const handleJoinClass = async () => {
     if (!joinCode.trim()) { Alert.alert("Enter class code"); return; }
     try {
       const q = query(collection(db, "classes"), where("classCode", "==", joinCode.trim().toUpperCase()));
       const snapshot = await getDocs(q);
       if (snapshot.empty) { Alert.alert("❌ Error", "Class code not found"); return; }
-
       const classDoc = snapshot.docs[0];
       const classId = classDoc.id;
-
       const enrollQ = query(
         collection(db, "enrollments"),
         where("studentId", "==", auth.currentUser.uid),
@@ -129,78 +234,63 @@ export default function HomeScreen() {
       );
       const enrollSnap = await getDocs(enrollQ);
       if (!enrollSnap.empty) { Alert.alert("Already enrolled in this class"); return; }
-
       await addDoc(collection(db, "enrollments"), {
         studentId: auth.currentUser.uid,
         studentName: userName,
         classId,
         joinedAt: new Date(),
       });
-
       Alert.alert("✅ Success", "You joined the class!");
       setJoinCode("");
       loadMyClasses();
     } catch (e) {
-      console.log(e);
       Alert.alert("Error", "Something went wrong");
     }
   };
 
   const handleLeaveClass = (classId, className) => {
-    Alert.alert(
-      "Leave Class",
-      `Are you sure you want to leave "${className}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Leave",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const enrollment = myEnrollments.find((e) => e.classId === classId);
-              if (enrollment) {
-                await deleteDoc(doc(db, "enrollments", enrollment.enrollId));
-                Alert.alert("✅ You left the class");
-                loadMyClasses();
-              }
-            } catch (e) {
-              console.log(e);
-              Alert.alert("Error", "Failed to leave class");
+    Alert.alert("Leave Class", `Are you sure you want to leave "${className}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const enrollment = myEnrollments.find((e) => e.classId === classId);
+            if (enrollment) {
+              await deleteDoc(doc(db, "enrollments", enrollment.enrollId));
+              Alert.alert("✅ You left the class");
+              loadMyClasses();
             }
-          },
+          } catch (e) {
+            Alert.alert("Error", "Failed to leave class");
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleDeleteClass = (classId, classNameToDelete) => {
-    Alert.alert(
-      "Delete Class",
-      `Are you sure you want to delete "${classNameToDelete}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, "classes", classId));
-
-              const enrollQ = query(collection(db, "enrollments"), where("classId", "==", classId));
-              const enrollSnap = await getDocs(enrollQ);
-              const deletePromises = enrollSnap.docs.map((d) => deleteDoc(doc(db, "enrollments", d.id)));
-              await Promise.all(deletePromises);
-
-              Alert.alert("✅ Class deleted");
-              loadClasses();
-            } catch (e) {
-              console.log(e);
-              Alert.alert("Error", "Failed to delete class");
-            }
-          },
+    Alert.alert("Delete Class", `Are you sure you want to delete "${classNameToDelete}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "classes", classId));
+            const enrollQ = query(collection(db, "enrollments"), where("classId", "==", classId));
+            const enrollSnap = await getDocs(enrollQ);
+            const deletePromises = enrollSnap.docs.map((d) => deleteDoc(doc(db, "enrollments", d.id)));
+            await Promise.all(deletePromises);
+            Alert.alert("✅ Class deleted");
+            loadClasses();
+          } catch (e) {
+            Alert.alert("Error", "Failed to delete class");
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleLogout = async () => {
@@ -225,12 +315,11 @@ export default function HomeScreen() {
         }
         await updatePassword(auth.currentUser, newPassword.trim());
       }
-      setUserName(newFirstName.trim() + " " + newLastName.trim());
+      setUserName(`${newFirstName.trim()} ${newLastName.trim()}`);
       setNewPassword("");
       setSettingsVisible(false);
       Alert.alert("✅ Success", "Settings saved successfully");
     } catch (error) {
-      console.log(error);
       Alert.alert("Error", "Failed to save settings. Please re-login and try again.");
     }
   };
@@ -283,6 +372,108 @@ export default function HomeScreen() {
     return schedule;
   };
 
+  // حساب نسبة الغياب
+  const totalPossibleAttendance = myClasses.length * 10; // افتراضي 10 محاضرات لكل كلاس
+  const absenceRate = totalPossibleAttendance > 0
+    ? Math.round(((totalPossibleAttendance - studentAttendanceCount) / totalPossibleAttendance) * 100)
+    : 0;
+
+  const renderDashboardStats = () => {
+    if (role === "student") {
+      return (
+        <>
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#6366f1" }]}>{myClasses.length}</Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Enrolled Classes</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#10b981" }]}>{studentAttendanceCount}</Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Lectures Attended</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#f59e0b" }]}>{studentId || "—"}</Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Student ID</Text>
+            </View>
+          </View>
+          {myClasses.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { color: theme.subText }]}>ENROLLED CLASSES PREVIEW</Text>
+              {myClasses.slice(0, 3).map((item) => (
+                <View key={item.id} style={[styles.classCard, { backgroundColor: theme.card }]}>
+                  <View style={styles.classCardLeft}>
+                    <Text style={styles.classCardIcon}>📖</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.classCardName, { color: theme.text }]}>{item.name}</Text>
+                      {item.classCode && <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>}
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+        </>
+      );
+    }
+
+    if (role === "instructor") {
+      return (
+        <>
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#10b981" }]}>{classes.length}</Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>My Classes</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#6366f1" }]}>{instructorStudentCount}</Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Enrolled Students</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <Text style={[styles.statNumber, { color: "#f59e0b" }]}>{instructorAttendanceCount}</Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Attendance Records</Text>
+            </View>
+          </View>
+          {classes.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { color: theme.subText }]}>RECENT CLASSES</Text>
+              {classes.slice(0, 3).map((item) => (
+                <View key={item.id} style={[styles.classCard, { backgroundColor: theme.card }]}>
+                  <View style={styles.classCardLeft}>
+                    <Text style={styles.classCardIcon}>🏫</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.classCardName, { color: theme.text }]}>{item.name}</Text>
+                      {item.classCode && <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>}
+                    </View>
+                  </View>
+                  <TouchableOpacity style={styles.manageBtn} onPress={() => nav.navigate("ManageClass", { classId: item.id })}>
+                    <Text style={styles.manageBtnText}>Manage →</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </>
+          )}
+        </>
+      );
+    }
+
+    return (
+      <View style={styles.statsRow}>
+        <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+          <Text style={[styles.statNumber, { color: "#f59e0b" }]}>Admin</Text>
+          <Text style={[styles.statLabel, { color: theme.subText }]}>Access Level</Text>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+          <Text style={[styles.statNumber, { color: "#2563eb" }]}>Users</Text>
+          <Text style={[styles.statLabel, { color: theme.subText }]}>Management</Text>
+        </View>
+        <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+          <Text style={[styles.statNumber, { color: "#10b981" }]}>Data</Text>
+          <Text style={[styles.statLabel, { color: theme.subText }]}>Overview</Text>
+        </View>
+      </View>
+    );
+  };
+
   const renderContent = () => {
     if (page === "dashboard") {
       return (
@@ -298,18 +489,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={styles.statsRow}>
-            {[
-              { num: "Cairo", label: "University" },
-              { num: "Sci", label: "Faculty" },
-              { num: role === "instructor" ? classes.length : role === "student" ? myClasses.length : "—", label: role === "instructor" ? "Classes" : role === "student" ? "Enrolled" : "Active", color: getRoleColor() },
-            ].map((s, i) => (
-              <View key={i} style={[styles.statCard, { backgroundColor: theme.card }]}>
-                <Text style={[styles.statNumber, { color: s.color || theme.text }]}>{s.num}</Text>
-                <Text style={[styles.statLabel, { color: theme.subText }]}>{s.label}</Text>
-              </View>
-            ))}
-          </View>
+          {renderDashboardStats()}
 
           <Text style={[styles.sectionTitle, { color: theme.subText }]}>Quick Actions</Text>
           <View style={styles.quickActions}>
@@ -358,7 +538,6 @@ export default function HomeScreen() {
     if (page === "attendance") {
       const schedule = getSchedule();
       const sortedDays = DAYS_ORDER.filter((d) => schedule[d]);
-
       return (
         <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
           <View style={styles.pageHeader}>
@@ -393,9 +572,7 @@ export default function HomeScreen() {
                             <View style={[styles.scheduleColorBar, { backgroundColor: getRoleColor() }]} />
                             <View style={{ flex: 1 }}>
                               <Text style={[styles.scheduleClassName, { color: theme.text }]}>{cls.name}</Text>
-                              {cls.classCode && (
-                                <Text style={[styles.scheduleCode, { color: theme.subText }]}>Code: {cls.classCode}</Text>
-                              )}
+                              {cls.classCode && <Text style={[styles.scheduleCode, { color: theme.subText }]}>Code: {cls.classCode}</Text>}
                             </View>
                             <View style={styles.scheduleTime}>
                               <Text style={[styles.scheduleTimeText, { color: getRoleColor() }]}>{cls.fromTime}</Text>
@@ -414,18 +591,14 @@ export default function HomeScreen() {
 
           {role !== "student" && (
             <View style={[styles.attendanceCard, { backgroundColor: theme.card }]}>
-              <Text style={[styles.attendanceInfo, { color: theme.subText }]}>
-                Attendance records will appear here
-              </Text>
+              <Text style={[styles.attendanceInfo, { color: theme.subText }]}>Attendance records will appear here</Text>
             </View>
           )}
         </ScrollView>
       );
     }
 
-    if (page === "digitalID" && role === "student") {
-      return <DigitalID />;
-    }
+    if (page === "digitalID" && role === "student") return <DigitalID />;
 
     if (page === "myClasses" && role === "student") {
       return (
@@ -467,20 +640,11 @@ export default function HomeScreen() {
                   <Text style={styles.classCardIcon}>📖</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.classCardName, { color: theme.text }]}>{item.name}</Text>
-                    {item.classCode && (
-                      <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>
-                    )}
-                    {item.day && (
-                      <Text style={[styles.classSchedule, { color: theme.subText }]}>
-                        📅 {item.day} {item.fromTime} - {item.toTime}
-                      </Text>
-                    )}
+                    {item.classCode && <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>}
+                    {item.day && <Text style={[styles.classSchedule, { color: theme.subText }]}>📅 {item.day} {item.fromTime} - {item.toTime}</Text>}
                   </View>
                 </View>
-                <TouchableOpacity
-                  style={styles.leaveBtn}
-                  onPress={() => handleLeaveClass(item.id, item.name)}
-                >
+                <TouchableOpacity style={styles.leaveBtn} onPress={() => handleLeaveClass(item.id, item.name)}>
                   <Text style={styles.leaveBtnText}>Leave</Text>
                 </TouchableOpacity>
               </View>
@@ -497,6 +661,7 @@ export default function HomeScreen() {
             <Text style={styles.pageIcon}>🏫</Text>
             <Text style={[styles.pageTitle, { color: theme.text }]}>My Classes</Text>
           </View>
+
           <View style={styles.createClassBox}>
             <TextInput
               style={[styles.classInput, { backgroundColor: theme.input, color: theme.inputText, borderColor: theme.border }]}
@@ -509,6 +674,7 @@ export default function HomeScreen() {
               <Text style={styles.createBtnText}>+ Create</Text>
             </TouchableOpacity>
           </View>
+
           {classes.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🏫</Text>
@@ -521,27 +687,15 @@ export default function HomeScreen() {
                   <Text style={styles.classCardIcon}>📖</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.classCardName, { color: theme.text }]}>{item.name}</Text>
-                    {item.classCode && (
-                      <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>
-                    )}
-                    {item.day && (
-                      <Text style={[styles.classSchedule, { color: theme.subText }]}>
-                        📅 {item.day} {item.fromTime} - {item.toTime}
-                      </Text>
-                    )}
+                    {item.classCode && <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>}
+                    {item.day && <Text style={[styles.classSchedule, { color: theme.subText }]}>📅 {item.day} {item.fromTime} - {item.toTime}</Text>}
                   </View>
                 </View>
                 <View style={{ flexDirection: "row", gap: 8 }}>
-                  <TouchableOpacity
-                    style={styles.manageBtn}
-                    onPress={() => nav.navigate("ManageClass", { classId: item.id })}
-                  >
+                  <TouchableOpacity style={styles.manageBtn} onPress={() => nav.navigate("ManageClass", { classId: item.id })}>
                     <Text style={styles.manageBtnText}>Manage →</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={() => handleDeleteClass(item.id, item.name)}
-                  >
+                  <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteClass(item.id, item.name)}>
                     <Text style={styles.deleteBtnText}>🗑️</Text>
                   </TouchableOpacity>
                 </View>
@@ -569,6 +723,7 @@ export default function HomeScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]}>
       <StatusBar barStyle={darkMode ? "light-content" : "dark-content"} backgroundColor={theme.bg} />
 
+      {/* Top Bar */}
       <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View>
           <Text style={[styles.facultyText, { color: theme.text }]}>Faculty of Science</Text>
@@ -581,9 +736,18 @@ export default function HomeScreen() {
           >
             <Text style={styles.settingsIconText}>⚙️</Text>
           </TouchableOpacity>
-          <View style={[styles.avatarCircle, { backgroundColor: getRoleColor() }]}>
-            <Text style={styles.avatarText}>{userName ? userName.charAt(0).toUpperCase() : "?"}</Text>
-          </View>
+
+          {/* Profile Button */}
+          <TouchableOpacity onPress={() => setProfileVisible(true)}>
+            {profileImage ? (
+              <Image source={{ uri: profileImage }} style={[styles.avatarCircle, { borderWidth: 2, borderColor: getRoleColor() }]} />
+            ) : (
+              <View style={[styles.avatarCircle, { backgroundColor: getRoleColor() }]}>
+                <Text style={styles.avatarText}>{userName ? userName.charAt(0).toUpperCase() : "?"}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.logoutIcon} onPress={handleLogout}>
             <Text style={styles.logoutIconText}>⏻</Text>
           </TouchableOpacity>
@@ -592,6 +756,7 @@ export default function HomeScreen() {
 
       <View style={styles.content}>{renderContent()}</View>
 
+      {/* Bottom Nav */}
       <View style={[styles.bottomNav, { backgroundColor: theme.navBg, borderTopColor: theme.border }]}>
         {navButtons.map((btn) => (
           <TouchableOpacity key={btn.key} style={styles.navBtn} onPress={() => setPage(btn.key)}>
@@ -604,19 +769,20 @@ export default function HomeScreen() {
         ))}
 
         {role === "admin" && (
-          <>
-            <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("Admin")}>
-              <Text style={styles.navBtnIcon}>👨‍🏫</Text>
-              <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Instructors</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("AdminDashboard")}>
-              <Text style={styles.navBtnIcon}>📊</Text>
-              <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Dashboard</Text>
-            </TouchableOpacity>
-          </>
-        )}
+  <>
+    <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("Admin")}>
+      <Text style={styles.navBtnIcon}>👨‍🏫</Text>
+      <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Instructors</Text>
+    </TouchableOpacity>
+    <TouchableOpacity style={styles.navBtn} onPress={() => nav.navigate("AdminDashboard")}>
+      <Text style={styles.navBtnIcon}>📊</Text>
+      <Text style={[styles.navBtnLabel, { color: theme.subText }]}>Dashboard</Text>
+    </TouchableOpacity>
+  </>
+)}
       </View>
 
+      {/* Settings Modal */}
       <Modal visible={settingsVisible} animationType="slide" transparent={true} onRequestClose={() => setSettingsVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: theme.card }]}>
@@ -659,6 +825,140 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Profile Modal */}
+      <Modal visible={profileVisible} animationType="slide" transparent={true} onRequestClose={() => setProfileVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.profileBox, { backgroundColor: theme.card }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+
+              {/* Profile Image */}
+              <View style={styles.profileImageContainer}>
+                {profileImage ? (
+                  <Image source={{ uri: profileImage }} style={styles.profileImageLarge} />
+                ) : (
+                  <View style={[styles.profileImageLarge, { backgroundColor: getRoleColor(), justifyContent: "center", alignItems: "center" }]}>
+                    <Text style={{ fontSize: 50, color: "white", fontWeight: "800" }}>
+                      {userName ? userName.charAt(0).toUpperCase() : "?"}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.profileImageBtns}>
+                  <TouchableOpacity style={[styles.profileImgBtn, { backgroundColor: getRoleColor() }]} onPress={pickImage}>
+                    <Text style={styles.profileImgBtnText}>📷 {profileImage ? "Change" : "Add Photo"}</Text>
+                  </TouchableOpacity>
+                  {profileImage && (
+                    <TouchableOpacity style={[styles.profileImgBtn, { backgroundColor: "#dc2626" }]} onPress={removeImage}>
+                      <Text style={styles.profileImgBtnText}>🗑️ Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Info */}
+              <Text style={[styles.profileName, { color: theme.text }]}>{userName}</Text>
+              <View style={[styles.roleBadgeLarge, { backgroundColor: getRoleColor() + "22", borderColor: getRoleColor() }]}>
+                <Text style={[styles.roleBadgeLargeText, { color: getRoleColor() }]}>{role?.toUpperCase()}</Text>
+              </View>
+
+              {/* Details */}
+              <View style={[styles.profileInfoCard, { backgroundColor: theme.bg }]}>
+                <View style={styles.profileInfoRow}>
+                  <Text style={styles.profileInfoIcon}>📧</Text>
+                  <View>
+                    <Text style={[styles.profileInfoLabel, { color: theme.subText }]}>Email</Text>
+                    <Text style={[styles.profileInfoValue, { color: theme.text }]}>{userEmail || "—"}</Text>
+                  </View>
+                </View>
+
+                {role === "student" && (
+                  <View style={styles.profileInfoRow}>
+                    <Text style={styles.profileInfoIcon}>🪪</Text>
+                    <View>
+                      <Text style={[styles.profileInfoLabel, { color: theme.subText }]}>Student ID</Text>
+                      <Text style={[styles.profileInfoValue, { color: theme.text }]}>{studentId || "—"}</Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.profileInfoRow}>
+                  <Text style={styles.profileInfoIcon}>🏛️</Text>
+                  <View>
+                    <Text style={[styles.profileInfoLabel, { color: theme.subText }]}>Department</Text>
+                    <Text style={[styles.profileInfoValue, { color: theme.text }]}>{userDepartment}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Stats للطالب */}
+              {role === "student" && (
+                <View style={[styles.profileStatsCard, { backgroundColor: theme.bg }]}>
+                  <Text style={[styles.profileStatsTitle, { color: theme.subText }]}>ACADEMIC STATS</Text>
+                  <View style={styles.profileStatsRow}>
+                    <View style={styles.profileStat}>
+                      <Text style={[styles.profileStatNum, { color: "#6366f1" }]}>{myClasses.length}</Text>
+                      <Text style={[styles.profileStatLabel, { color: theme.subText }]}>Classes</Text>
+                    </View>
+                    <View style={styles.profileStat}>
+                      <Text style={[styles.profileStatNum, { color: "#10b981" }]}>{studentAttendanceCount}</Text>
+                      <Text style={[styles.profileStatLabel, { color: theme.subText }]}>Attended</Text>
+                    </View>
+                    <View style={styles.profileStat}>
+                      <Text style={[styles.profileStatNum, { color: absenceRate > 25 ? "#dc2626" : "#10b981" }]}>
+                        {absenceRate}%
+                      </Text>
+                      <Text style={[styles.profileStatLabel, { color: theme.subText }]}>Absence</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Stats للإنستراكتور */}
+              {role === "instructor" && (
+                <View style={[styles.profileStatsCard, { backgroundColor: theme.bg }]}>
+                  <Text style={[styles.profileStatsTitle, { color: theme.subText }]}>TEACHING STATS</Text>
+                  <View style={styles.profileStatsRow}>
+                    <View style={styles.profileStat}>
+                      <Text style={[styles.profileStatNum, { color: "#10b981" }]}>{classes.length}</Text>
+                      <Text style={[styles.profileStatLabel, { color: theme.subText }]}>Classes</Text>
+                    </View>
+                    <View style={styles.profileStat}>
+                      <Text style={[styles.profileStatNum, { color: "#6366f1" }]}>{instructorStudentCount}</Text>
+                      <Text style={[styles.profileStatLabel, { color: theme.subText }]}>Students</Text>
+                    </View>
+                    <View style={styles.profileStat}>
+                      <Text style={[styles.profileStatNum, { color: "#f59e0b" }]}>{instructorAttendanceCount}</Text>
+                      <Text style={[styles.profileStatLabel, { color: theme.subText }]}>Records</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity style={[styles.cancelBtn, { borderColor: theme.border, marginTop: 10 }]} onPress={() => setProfileVisible(false)}>
+                <Text style={[styles.cancelBtnText, { color: theme.subText }]}>Close</Text>
+              </TouchableOpacity>
+
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <ChatAssistant
+  role={role}
+  data={{
+    studentAttendanceRate: studentAttendanceCount,
+    studentEnrollments: myClasses,
+    todayStudentClasses: myClasses.filter((c) => c.day === new Date().toLocaleDateString("en-US", { weekday: "long" })),
+    studentActivityFeed: myClasses.map((c) => ({ text: `Joined class ${c.name}` })),
+
+    totalEnrolledStudents: instructorStudentCount,
+    instructorAttendanceRate: instructorAttendanceCount,
+    sessionsThisWeek: classes.length,
+    instructorClasses: classes,
+    todayInstructorClasses: classes.filter((c) => c.day === new Date().toLocaleDateString("en-US", { weekday: "long" })),
+    instructorActivityFeed: classes.map((c) => ({ text: `Created or manages class ${c.name}` })),
+  }}
+/>
     </SafeAreaView>
   );
 }
@@ -693,7 +993,7 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
   statCard: { flex: 1, borderRadius: 12, padding: 14, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
   statNumber: { fontSize: 18, fontWeight: "800" },
-  statLabel: { fontSize: 11, marginTop: 2 },
+  statLabel: { fontSize: 11, marginTop: 2, textAlign: "center" },
   sectionTitle: { fontSize: 13, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 },
   quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   quickBtn: { flex: 1, minWidth: "44%", borderRadius: 14, padding: 16, alignItems: "center" },
@@ -715,10 +1015,7 @@ const styles = StyleSheet.create({
   daySection: { marginBottom: 16 },
   dayHeader: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, marginBottom: 8 },
   dayHeaderText: { color: "white", fontWeight: "800", fontSize: 14 },
-  scheduleCard: {
-    flexDirection: "row", alignItems: "center", borderRadius: 12, marginBottom: 8, overflow: "hidden",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
-  },
+  scheduleCard: { flexDirection: "row", alignItems: "center", borderRadius: 12, marginBottom: 8, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
   scheduleColorBar: { width: 4, alignSelf: "stretch" },
   scheduleClassName: { fontSize: 14, fontWeight: "700", paddingLeft: 12, paddingTop: 12 },
   scheduleCode: { fontSize: 11, paddingLeft: 12, paddingBottom: 12, marginTop: 2 },
@@ -740,11 +1037,7 @@ const styles = StyleSheet.create({
   classInput: { flex: 1, padding: 12, borderRadius: 12, fontSize: 14, borderWidth: 1 },
   createBtn: { backgroundColor: "#10b981", paddingHorizontal: 16, borderRadius: 12, justifyContent: "center" },
   createBtnText: { color: "white", fontWeight: "800", fontSize: 14 },
-  classCard: {
-    borderRadius: 14, padding: 16, flexDirection: "row",
-    justifyContent: "space-between", alignItems: "center", marginBottom: 10,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
-  },
+  classCard: { borderRadius: 14, padding: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
   classCardLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   classCardIcon: { fontSize: 22 },
   classCardName: { fontSize: 15, fontWeight: "700" },
@@ -757,10 +1050,7 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: "center", paddingVertical: 40 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
   emptyText: { fontSize: 14 },
-  bottomNav: {
-    flexDirection: "row", borderTopWidth: 1, paddingVertical: 8, paddingHorizontal: 10,
-    shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 10,
-  },
+  bottomNav: { flexDirection: "row", borderTopWidth: 1, paddingVertical: 8, paddingHorizontal: 10, shadowColor: "#000", shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 10 },
   navBtn: { flex: 1, alignItems: "center", paddingVertical: 6, position: "relative" },
   navBtnIcon: { fontSize: 20, marginBottom: 3 },
   navBtnLabel: { fontSize: 10, fontWeight: "600" },
@@ -776,4 +1066,31 @@ const styles = StyleSheet.create({
   saveBtnText: { color: "white", fontWeight: "800", fontSize: 15 },
   cancelBtn: { padding: 14, borderRadius: 14, alignItems: "center", borderWidth: 1 },
   cancelBtnText: { fontWeight: "600", fontSize: 15 },
+
+  // Profile Modal
+  profileBox: {
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40, maxHeight: "90%",
+    shadowColor: "#000", shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1, shadowRadius: 20, elevation: 20,
+  },
+  profileImageContainer: { alignItems: "center", marginBottom: 16 },
+  profileImageLarge: { width: 100, height: 100, borderRadius: 50, marginBottom: 12 },
+  profileImageBtns: { flexDirection: "row", gap: 10 },
+  profileImgBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  profileImgBtnText: { color: "white", fontWeight: "700", fontSize: 13 },
+  profileName: { fontSize: 22, fontWeight: "800", textAlign: "center", marginBottom: 8 },
+  roleBadgeLarge: { alignSelf: "center", paddingHorizontal: 14, paddingVertical: 4, borderRadius: 20, borderWidth: 1, marginBottom: 20 },
+  roleBadgeLargeText: { fontSize: 12, fontWeight: "700", letterSpacing: 1 },
+  profileInfoCard: { borderRadius: 16, padding: 16, marginBottom: 16 },
+  profileInfoRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
+  profileInfoIcon: { fontSize: 22 },
+  profileInfoLabel: { fontSize: 11, fontWeight: "600", letterSpacing: 0.5 },
+  profileInfoValue: { fontSize: 15, fontWeight: "700", marginTop: 2 },
+  profileStatsCard: { borderRadius: 16, padding: 16, marginBottom: 16 },
+  profileStatsTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: 12 },
+  profileStatsRow: { flexDirection: "row", justifyContent: "space-around" },
+  profileStat: { alignItems: "center" },
+  profileStatNum: { fontSize: 24, fontWeight: "800" },
+  profileStatLabel: { fontSize: 11, marginTop: 4 },
 });
