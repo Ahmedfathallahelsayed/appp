@@ -94,7 +94,7 @@ export default function LoginScreen() {
         const snap = await getDocs(q);
         if (!snap.empty) userData = snap.docs[0].data();
       }
-
+/* ---------------------*/
       if (!userData) { Alert.alert("Error", "User data not found"); return; }
 
       setAccountsVisible(false);
