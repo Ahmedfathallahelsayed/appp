@@ -39,7 +39,7 @@ const DAYS_ORDER = [
 export default function HomeScreen() {
   const nav = useNavigation();
   const route = useRoute();
-
+const navigation = useNavigation();
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userDepartment, setUserDepartment] = useState("");
@@ -54,7 +54,6 @@ export default function HomeScreen() {
   const [darkMode, setDarkMode] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [userUid, setUserUid] = useState("");
-
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
   const [newFirstName, setNewFirstName] = useState("");
@@ -219,14 +218,20 @@ export default function HomeScreen() {
     ]);
   };
 
-  const handleJoinClass = async () => {
+const handleJoinClass = async () => {
     if (!joinCode.trim()) { Alert.alert("Enter class code"); return; }
     try {
+      // 1. جلب بيانات الكلاس بالكامل
       const q = query(collection(db, "classes"), where("classCode", "==", joinCode.trim().toUpperCase()));
       const snapshot = await getDocs(q);
+      
       if (snapshot.empty) { Alert.alert("❌ Error", "Class code not found"); return; }
+      
       const classDoc = snapshot.docs[0];
+      const classData = classDoc.data(); // هنا كل بيانات الكلاس (Name, Time, Day)
       const classId = classDoc.id;
+
+      // 2. التأكد من عدم التسجيل المسبق
       const enrollQ = query(
         collection(db, "enrollments"),
         where("studentId", "==", auth.currentUser.uid),
@@ -234,20 +239,32 @@ export default function HomeScreen() {
       );
       const enrollSnap = await getDocs(enrollQ);
       if (!enrollSnap.empty) { Alert.alert("Already enrolled in this class"); return; }
+
+      // 3. التعديل الجوهري: إضافة البيانات التي يحتاجها الويب
       await addDoc(collection(db, "enrollments"), {
         studentId: auth.currentUser.uid,
         studentName: userName,
-        classId,
+        classId: classId,
+        
+        // --- هذه الحقول هي التي يقرأها كود الويب (React) عندك ---
+        className: classData.name || "Unnamed Class", 
+        classCode: classData.classCode || joinCode.toUpperCase(),
+        day: classData.day || "",
+        fromTime: classData.fromTime || classData.startTime || "", 
+        toTime: classData.toTime || classData.endTime || "",
+        // -------------------------------------------------------
+
         joinedAt: new Date(),
       });
+
       Alert.alert("✅ Success", "You joined the class!");
       setJoinCode("");
       loadMyClasses();
     } catch (e) {
+      console.log(e);
       Alert.alert("Error", "Something went wrong");
     }
   };
-
   const handleLeaveClass = (classId, className) => {
     Alert.alert("Leave Class", `Are you sure you want to leave "${className}"?`, [
       { text: "Cancel", style: "cancel" },
@@ -518,18 +535,34 @@ export default function HomeScreen() {
               </TouchableOpacity>
             )}
 
-            {role === "admin" && (
-              <>
-                <TouchableOpacity style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]} onPress={() => nav.navigate("Admin")}>
-                  <Text style={styles.quickBtnIcon}>👨‍🏫</Text>
-                  <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Instructors</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]} onPress={() => nav.navigate("AdminDashboard")}>
-                  <Text style={styles.quickBtnIcon}>📊</Text>
-                  <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Dashboard</Text>
-                </TouchableOpacity>
-              </>
-            )}
+           {role === "admin" && (
+  <>
+    <TouchableOpacity 
+      style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]} 
+      onPress={() => nav.navigate("Admin")}
+    >
+      <Text style={styles.quickBtnIcon}>👨‍🏫</Text>
+      <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Instructors</Text>
+    </TouchableOpacity>
+
+    <TouchableOpacity 
+      style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]} 
+      onPress={() => nav.navigate("AdminDashboard")}
+    >
+      <Text style={styles.quickBtnIcon}>📊</Text>
+      <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Dashboard</Text>
+    </TouchableOpacity>
+
+    {/* زرار الطلبات الجديد للأدمن */}
+    <TouchableOpacity 
+      style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]} 
+      onPress={() => nav.navigate("AdminRequests")}
+    >
+      <Text style={styles.quickBtnIcon}>📩</Text>
+      <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Requests</Text>
+    </TouchableOpacity>
+  </>
+)}
           </View>
         </ScrollView>
       );
@@ -650,8 +683,20 @@ export default function HomeScreen() {
               </View>
             ))
           )}
+
+          {/* التعديل الجديد: زرار طلب حذف المادة يظهر فقط لو الطالب مسجل في مواد */}
+          {myClasses.length > 0 && (
+            <TouchableOpacity
+              style={styles.requestBtn}
+              onPress={() => navigation.navigate("StudentRequests")}
+            >
+              <Text style={styles.requestBtnText}>Request Course Drop</Text>
+            </TouchableOpacity>
+          )}
+
         </ScrollView>
       );
+    
     }
 
     if (page === "classes" && role === "instructor") {
@@ -1093,4 +1138,22 @@ const styles = StyleSheet.create({
   profileStat: { alignItems: "center" },
   profileStatNum: { fontSize: 24, fontWeight: "800" },
   profileStatLabel: { fontSize: 11, marginTop: 4 },
+requestBtn: {
+    backgroundColor: "#ef4444",
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 20,
+    marginBottom: 40, // عشان ما يبقاش لازق في شريط التنقل تحت
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  requestBtnText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
 });

@@ -10,7 +10,8 @@ import ManageClassScreen from "./screens/ManageClassScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import AdminScreen from "./screens/AdminScreen";
 import AdminDashboardScreen from "./screens/AdminDashboardScreen";
-
+import StudentRequestsScreen from "./screens/StudentRequestsScreen";
+import AdminRequestsScreen from "./screens/AdminRequestsScreen";
 const Stack = createNativeStackNavigator();
 
 export default function App() {
@@ -27,6 +28,11 @@ export default function App() {
         <Stack.Screen name="QRScanner" component={QRScannerScreen} />
         <Stack.Screen name="Admin" component={AdminScreen} />
         <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
+        <Stack.Screen name="StudentRequests" component={StudentRequestsScreen}/>
+        <Stack.Screen
+  name="AdminRequests"
+  component={AdminRequestsScreen}
+/>
       </Stack.Navigator>
     </NavigationContainer>
   );
