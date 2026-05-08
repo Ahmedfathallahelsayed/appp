@@ -1,4 +1,5 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+
 import {
   View,
   Text,
@@ -6,68 +7,74 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
+
 import { useNavigation } from "@react-navigation/native";
+
+import { collection, getDocs, query, where } from "firebase/firestore";
+
 import { auth, db } from "../firebase";
-import { collection, query, where, getDocs } from "firebase/firestore";
-
-const REVIEW_CHUNK = 30;
-
-function formatReviewDate(ts) {
-  if (!ts) return "";
-  try {
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
-    return d.toLocaleString();
-  } catch {
-    return "";
-  }
-}
 
 export default function InstructorReviewsScreen() {
-  const nav = useNavigation();
+  const navigation = useNavigation();
+
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadReviews = useCallback(async () => {
-    const user = auth.currentUser;
-    if (!user) {
-      setReviews([]);
-      setLoading(false);
-      return;
-    }
-
     try {
-      const classesQ = query(collection(db, "classes"), where("instructorId", "==", user.uid));
-      const classesSnap = await getDocs(classesQ);
-      const classIds = classesSnap.docs.map((d) => d.id);
+      const user = auth.currentUser;
+
+      if (!user) {
+        setReviews([]);
+        return;
+      }
+
+      const classesQuery = query(
+        collection(db, "classes"),
+        where("instructorId", "==", user.uid),
+      );
+
+      const classesSnapshot = await getDocs(classesQuery);
+
+      const classIds = classesSnapshot.docs.map((doc) => doc.id);
 
       if (classIds.length === 0) {
         setReviews([]);
         return;
       }
 
-      const byId = new Map();
-      for (let i = 0; i < classIds.length; i += REVIEW_CHUNK) {
-        const chunk = classIds.slice(i, i + REVIEW_CHUNK);
-        const revQ = query(collection(db, "reviews"), where("classId", "in", chunk));
-        const revSnap = await getDocs(revQ);
-        revSnap.forEach((docSnap) => {
-          byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
-        });
+      let allReviews = [];
+
+      for (const classId of classIds) {
+        const reviewQuery = query(
+          collection(db, "reviews"),
+          where("classId", "==", classId),
+        );
+
+        const reviewSnapshot = await getDocs(reviewQuery);
+
+        const reviewData = reviewSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        allReviews.push(...reviewData);
       }
 
-      const list = Array.from(byId.values());
-      list.sort((a, b) => {
-        const ta = a.createdAt?.toMillis?.() ?? 0;
-        const tb = b.createdAt?.toMillis?.() ?? 0;
-        return tb - ta;
+      allReviews.sort((a, b) => {
+        const aTime = a.createdAt?.seconds || 0;
+        const bTime = b.createdAt?.seconds || 0;
+
+        return bTime - aTime;
       });
-      setReviews(list);
-    } catch (e) {
-      console.warn("InstructorReviews load error:", e);
+
+      setReviews(allReviews);
+    } catch (error) {
+      console.log("Load Reviews Error:", error);
       setReviews([]);
     } finally {
       setLoading(false);
@@ -75,8 +82,7 @@ export default function InstructorReviewsScreen() {
     }
   }, []);
 
-  React.useEffect(() => {
-    setLoading(true);
+  useEffect(() => {
     loadReviews();
   }, [loadReviews]);
 
@@ -85,43 +91,82 @@ export default function InstructorReviewsScreen() {
     loadReviews();
   };
 
+  const renderStars = (rating) => {
+    return "⭐".repeat(Number(rating || 0));
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return "";
+
+    try {
+      return timestamp.toDate().toLocaleString();
+    } catch {
+      return "";
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => nav.goBack()}>
-          <Text style={styles.back}>← Back</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backBtn}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Student reviews</Text>
-        <View style={{ width: 56 }} />
+
+        <Text style={styles.headerTitle}>Student Reviews</Text>
+
+        <View style={{ width: 60 }} />
       </View>
 
       {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#10b981" />
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#2563eb" />
         </View>
       ) : reviews.length === 0 ? (
-        <View style={styles.centered}>
+        <View style={styles.center}>
           <Text style={styles.emptyIcon}>⭐</Text>
-          <Text style={styles.emptyText}>No reviews yet for your classes.</Text>
-          <Text style={styles.emptyHint}>Reviews from the web or the student app appear here.</Text>
+
+          <Text style={styles.emptyTitle}>No reviews yet</Text>
+
+          <Text style={styles.emptySubtitle}>
+            Reviews submitted by students will appear here.
+          </Text>
         </View>
       ) : (
         <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: 40,
+          }}
         >
-          <Text style={styles.count}>{reviews.length} review{reviews.length !== 1 ? "s" : ""}</Text>
-          {reviews.map((r) => (
-            <View key={r.id} style={styles.card}>
-              <View style={styles.cardTop}>
-                <Text style={styles.className}>{r.className || "Class"}</Text>
-                <Text style={styles.stars}>{"⭐".repeat(Math.min(5, Math.max(1, Number(r.rating) || 0)))}</Text>
+          <Text style={styles.reviewCount}>
+            {reviews.length} Review
+            {reviews.length !== 1 ? "s" : ""}
+          </Text>
+
+          {reviews.map((review) => (
+            <View key={review.id} style={styles.reviewCard}>
+              <View style={styles.reviewHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.className}>
+                    {review.className || "Class"}
+                  </Text>
+
+                  <Text style={styles.classCode}>{review.classCode || ""}</Text>
+                </View>
+
+                <Text style={styles.stars}>{renderStars(review.rating)}</Text>
               </View>
-              {r.classCode ? <Text style={styles.meta}>Code: {r.classCode}</Text> : null}
-              <Text style={styles.student}>From: {r.studentName || "Student"}</Text>
-              <Text style={styles.comment}>{r.comment || ""}</Text>
-              <Text style={styles.date}>{formatReviewDate(r.createdAt)}</Text>
+
+              <Text style={styles.studentName}>
+                From: {review.studentName || "Student"}
+              </Text>
+
+              <Text style={styles.comment}>{review.comment || ""}</Text>
+
+              <Text style={styles.date}>{formatDate(review.createdAt)}</Text>
             </View>
           ))}
         </ScrollView>
@@ -131,7 +176,11 @@ export default function InstructorReviewsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  container: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+  },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -142,33 +191,98 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
-  back: { fontSize: 15, fontWeight: "600", color: "#2563eb" },
-  title: { fontSize: 17, fontWeight: "800", color: "#0f172a" },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyText: { fontSize: 16, fontWeight: "700", color: "#334155", textAlign: "center" },
-  emptyHint: { fontSize: 13, color: "#64748b", textAlign: "center", marginTop: 8 },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 32 },
-  count: { fontSize: 13, fontWeight: "600", color: "#64748b", marginBottom: 12 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 16,
+
+  backBtn: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2563eb",
+  },
+
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+
+  emptyIcon: {
+    fontSize: 50,
     marginBottom: 12,
+  },
+
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#64748b",
+    marginTop: 8,
+    textAlign: "center",
+  },
+
+  reviewCount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748b",
+    marginBottom: 12,
+  },
+
+  reviewCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 },
-  className: { fontSize: 16, fontWeight: "800", color: "#0f172a", flex: 1, marginRight: 8 },
-  stars: { fontSize: 14 },
-  meta: { fontSize: 12, color: "#64748b", marginBottom: 4 },
-  student: { fontSize: 13, fontWeight: "600", color: "#475569", marginBottom: 8 },
-  comment: { fontSize: 14, color: "#1e293b", lineHeight: 20 },
-  date: { fontSize: 11, color: "#94a3b8", marginTop: 10 },
+
+  reviewHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+
+  className: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+
+  classCode: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 2,
+  },
+
+  stars: {
+    fontSize: 15,
+  },
+
+  studentName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: 10,
+  },
+
+  comment: {
+    fontSize: 15,
+    color: "#1e293b",
+    lineHeight: 22,
+  },
+
+  date: {
+    marginTop: 12,
+    fontSize: 12,
+    color: "#94a3b8",
+  },
 });
