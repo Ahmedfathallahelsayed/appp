@@ -30,6 +30,11 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
+import {
+  scheduleSessionNotifications,
+  cancelSessionNotifications,
+  syncSessionNotifications,
+} from "../services/notificationService";
 
 const DAYS_ORDER = [
   "Saturday", "Sunday", "Monday", "Tuesday",
@@ -60,6 +65,7 @@ const navigation = useNavigation();
   const [newLastName, setNewLastName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [userDocId, setUserDocId] = useState("");
+  const [enableFiveMinuteReminder] = useState(true);
 
   const [studentAttendanceCount, setStudentAttendanceCount] = useState(0);
   const [instructorStudentCount, setInstructorStudentCount] = useState(0);
@@ -138,6 +144,9 @@ const navigation = useNavigation();
         classSnap.forEach((d) => classList.push({ id: d.id, ...d.data() }));
       }
       setMyClasses(classList);
+      await syncSessionNotifications(classList, {
+        enableFiveMinuteReminder,
+      });
     } catch (e) { console.log(e); }
   };
 
@@ -257,6 +266,15 @@ const handleJoinClass = async () => {
         joinedAt: new Date(),
       });
 
+      await scheduleSessionNotifications({
+        sessionId: classId,
+        classId,
+        className: classData.name || "Unnamed Class",
+        day: classData.day || "",
+        fromTime: classData.fromTime || classData.startTime || "",
+        enableFiveMinuteReminder,
+      });
+
       Alert.alert("✅ Success", "You joined the class!");
       setJoinCode("");
       loadMyClasses();
@@ -276,6 +294,7 @@ const handleJoinClass = async () => {
             const enrollment = myEnrollments.find((e) => e.classId === classId);
             if (enrollment) {
               await deleteDoc(doc(db, "enrollments", enrollment.enrollId));
+              await cancelSessionNotifications(classId);
               Alert.alert("✅ You left the class");
               loadMyClasses();
             }
@@ -295,6 +314,7 @@ const handleJoinClass = async () => {
         style: "destructive",
         onPress: async () => {
           try {
+            await cancelSessionNotifications(classId);
             await deleteDoc(doc(db, "classes", classId));
             const enrollQ = query(collection(db, "enrollments"), where("classId", "==", classId));
             const enrollSnap = await getDocs(enrollQ);

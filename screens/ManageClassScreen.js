@@ -21,6 +21,10 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
+import {
+  cancelSessionNotifications,
+  scheduleSessionNotifications,
+} from "../services/notificationService";
 
 const DAYS = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -83,6 +87,14 @@ export default function ManageClassScreen({ route }) {
         fromTime: editFrom.trim(),
         toTime: editTo.trim(),
       });
+      await scheduleSessionNotifications({
+        sessionId: classId,
+        classId,
+        className: editName.trim(),
+        day: editDay,
+        fromTime: editFrom.trim(),
+        enableFiveMinuteReminder: true,
+      });
       Alert.alert("✅ Saved successfully");
       setEditVisible(false);
       loadClass();
@@ -103,6 +115,7 @@ export default function ManageClassScreen({ route }) {
           style: "destructive",
           onPress: async () => {
             try {
+              await cancelSessionNotifications(classId);
               console.log("Deleting classId:", classId);
               await deleteDoc(doc(db, "classes", classId));
               console.log("Class deleted successfully");
