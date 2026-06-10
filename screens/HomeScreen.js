@@ -16,6 +16,7 @@ import {
   Switch,
   Modal,
   Image,
+  ActivityIndicator,
 } from "react-native";
 
 import { auth, db } from "../firebase";
@@ -29,6 +30,8 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  getDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import {
   scheduleSessionNotifications,
@@ -67,6 +70,13 @@ const navigation = useNavigation();
   const [userDocId, setUserDocId] = useState("");
   const [enableFiveMinuteReminder] = useState(true);
 
+  const [myReviews, setMyReviews] = useState([]);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [selectedReviewClass, setSelectedReviewClass] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewLoading, setReviewLoading] = useState(false);
+
   const [studentAttendanceCount, setStudentAttendanceCount] = useState(0);
   const [instructorStudentCount, setInstructorStudentCount] = useState(0);
   const [instructorAttendanceCount, setInstructorAttendanceCount] = useState(0);
@@ -80,6 +90,7 @@ const navigation = useNavigation();
     if (role === "student") {
       loadMyClasses();
       loadStudentAttendanceCount();
+      fetchMyReviews();
     }
     if (role === "instructor") {
       loadClasses();
@@ -91,6 +102,100 @@ const navigation = useNavigation();
       loadInstructorDashboardStats();
     }
   }, [role, classes]);
+
+  const getStudentName = async (user) => {
+    if (!user) return "Student";
+    try {
+      const directSnap = await getDoc(doc(db, "users", user.uid));
+      if (directSnap.exists()) {
+        const data = directSnap.data();
+        const name = `${data.firstName || ""} ${data.lastName || ""}`.trim();
+        return name || user.email || "Student";
+      }
+      const userQuery = query(collection(db, "users"), where("uid", "==", user.uid));
+      const userSnap = await getDocs(userQuery);
+      if (!userSnap.empty) {
+        const data = userSnap.docs[0].data();
+        const name = `${data.firstName || ""} ${data.lastName || ""}`.trim();
+        return name || user.email || "Student";
+      }
+    } catch (e) {
+      console.log(e);
+    }
+    return user.email || "Student";
+  };
+
+  const fetchMyReviews = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const q = query(collection(db, "reviews"), where("studentUid", "==", user.uid));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setMyReviews(data);
+    } catch (e) {
+      console.log(e);
+      setMyReviews([]);
+    }
+  };
+
+  const hasReviewedClass = (classId) => myReviews.some((r) => r.classId === classId);
+
+  const openReviewModal = (cls) => {
+    const enrollment = myEnrollments.find((e) => e.classId === cls.id);
+    setSelectedReviewClass({
+      classId: cls.id,
+      classCode: cls.classCode || enrollment?.classCode || "",
+      className: cls.name || enrollment?.className || "Unnamed Class",
+      instructorId: cls.instructorId || enrollment?.instructorId || "",
+    });
+    setReviewRating(5);
+    setReviewComment("");
+    setReviewModalVisible(true);
+  };
+
+  const closeReviewModal = () => {
+    setReviewModalVisible(false);
+    setSelectedReviewClass(null);
+    setReviewRating(5);
+    setReviewComment("");
+  };
+
+  const handleSubmitReview = async () => {
+    if (!selectedReviewClass) return;
+    if (!reviewComment.trim()) {
+      Alert.alert("Review", "Please write your feedback.");
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) return;
+    if (hasReviewedClass(selectedReviewClass.classId)) {
+      Alert.alert("Review", "You already reviewed this class.");
+      return;
+    }
+    setReviewLoading(true);
+    try {
+      const studentName = await getStudentName(user);
+      await addDoc(collection(db, "reviews"), {
+        studentUid: user.uid,
+        studentName,
+        classId: selectedReviewClass.classId,
+        classCode: selectedReviewClass.classCode,
+        className: selectedReviewClass.className,
+        instructorId: selectedReviewClass.instructorId || "",
+        rating: Number(reviewRating),
+        comment: reviewComment.trim(),
+        createdAt: serverTimestamp(),
+      });
+      Alert.alert("✅ Success", "Review submitted!");
+      closeReviewModal();
+      fetchMyReviews();
+    } catch (e) {
+      console.log(e);
+      Alert.alert("Error", "Could not submit review.");
+    }
+    setReviewLoading(false);
+  };
 
   const loadUserData = async () => {
     const user = auth.currentUser;
@@ -261,6 +366,7 @@ const handleJoinClass = async () => {
         day: classData.day || "",
         fromTime: classData.fromTime || classData.startTime || "", 
         toTime: classData.toTime || classData.endTime || "",
+        instructorId: classData.instructorId || "",
         // -------------------------------------------------------
 
         joinedAt: new Date(),
@@ -549,10 +655,19 @@ const handleJoinClass = async () => {
             )}
 
             {role === "instructor" && (
-              <TouchableOpacity style={[styles.quickBtn, { backgroundColor: "#10b98115" }]} onPress={() => setPage("classes")}>
-                <Text style={styles.quickBtnIcon}>🏫</Text>
-                <Text style={[styles.quickBtnText, { color: "#10b981" }]}>My Classes</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity style={[styles.quickBtn, { backgroundColor: "#10b98115" }]} onPress={() => setPage("classes")}>
+                  <Text style={styles.quickBtnIcon}>🏫</Text>
+                  <Text style={[styles.quickBtnText, { color: "#10b981" }]}>My Classes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.quickBtn, { backgroundColor: "#f59e0b15" }]}
+                  onPress={() => nav.navigate("InstructorReviews")}
+                >
+                  <Text style={styles.quickBtnIcon}>⭐</Text>
+                  <Text style={[styles.quickBtnText, { color: "#f59e0b" }]}>Reviews</Text>
+                </TouchableOpacity>
+              </>
             )}
 
            {role === "admin" && (
@@ -689,17 +804,28 @@ const handleJoinClass = async () => {
           ) : (
             myClasses.map((item) => (
               <View key={item.id} style={[styles.classCard, { backgroundColor: theme.card }]}>
-                <View style={styles.classCardLeft}>
-                  <Text style={styles.classCardIcon}>📖</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.classCardName, { color: theme.text }]}>{item.name}</Text>
-                    {item.classCode && <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>}
-                    {item.day && <Text style={[styles.classSchedule, { color: theme.subText }]}>📅 {item.day} {item.fromTime} - {item.toTime}</Text>}
+                <View style={styles.studentClassRow}>
+                  <View style={styles.classCardLeft}>
+                    <Text style={styles.classCardIcon}>📖</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.classCardName, { color: theme.text }]}>{item.name}</Text>
+                      {item.classCode && <Text style={[styles.classCode, { color: theme.subText }]}>Code: {item.classCode}</Text>}
+                      {item.day && <Text style={[styles.classSchedule, { color: theme.subText }]}>📅 {item.day} {item.fromTime} - {item.toTime}</Text>}
+                    </View>
                   </View>
+                  <TouchableOpacity style={styles.leaveBtn} onPress={() => handleLeaveClass(item.id, item.name)}>
+                    <Text style={styles.leaveBtnText}>Leave</Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity style={styles.leaveBtn} onPress={() => handleLeaveClass(item.id, item.name)}>
-                  <Text style={styles.leaveBtnText}>Leave</Text>
-                </TouchableOpacity>
+                {hasReviewedClass(item.id) ? (
+                  <View style={styles.reviewSubmittedBadge}>
+                    <Text style={styles.reviewSubmittedText}>✓ Review submitted</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.reviewClassBtn} onPress={() => openReviewModal(item)}>
+                    <Text style={styles.reviewClassBtnText}>⭐ Rate this class</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ))
           )}
@@ -726,6 +852,18 @@ const handleJoinClass = async () => {
             <Text style={styles.pageIcon}>🏫</Text>
             <Text style={[styles.pageTitle, { color: theme.text }]}>My Classes</Text>
           </View>
+
+          <TouchableOpacity
+            style={[styles.instructorReviewsCta, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => nav.navigate("InstructorReviews")}
+          >
+            <Text style={styles.instructorReviewsCtaIcon}>⭐</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.instructorReviewsCtaTitle, { color: theme.text }]}>Student reviews</Text>
+              <Text style={[styles.instructorReviewsCtaSub, { color: theme.subText }]}>See ratings from app or web</Text>
+            </View>
+            <Text style={[styles.instructorReviewsCtaArrow, { color: theme.subText }]}>→</Text>
+          </TouchableOpacity>
 
           <View style={styles.createClassBox}>
             <TextInput
@@ -1008,6 +1146,64 @@ const handleJoinClass = async () => {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={reviewModalVisible} animationType="slide" transparent onRequestClose={closeReviewModal}>
+        <View style={styles.reviewModalOverlay}>
+          <View style={[styles.reviewModalBox, { backgroundColor: darkMode ? "#1e293b" : "#ffffff" }]}>
+            <Text style={[styles.reviewModalTitle, { color: darkMode ? "#f1f5f9" : "#0f172a" }]}>
+              Review {selectedReviewClass?.className || ""}
+            </Text>
+            <Text style={[styles.reviewModalLabel, { color: darkMode ? "#94a3b8" : "#64748b" }]}>Rating</Text>
+            <View style={styles.ratingRow}>
+              {[5, 4, 3, 2, 1].map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  style={[styles.ratingChip, reviewRating === n && styles.ratingChipActive]}
+                  onPress={() => setReviewRating(n)}
+                >
+                  <Text style={[styles.ratingChipText, reviewRating === n && styles.ratingChipTextActive]}>
+                    {n} {"⭐".repeat(n)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.reviewModalLabel, { color: darkMode ? "#94a3b8" : "#64748b" }]}>Comment</Text>
+            <TextInput
+              style={[
+                styles.reviewModalInput,
+                {
+                  backgroundColor: darkMode ? "#334155" : "#f1f5f9",
+                  color: darkMode ? "#f1f5f9" : "#0f172a",
+                  borderColor: darkMode ? "#475569" : "#e2e8f0",
+                },
+              ]}
+              placeholder="Write your feedback..."
+              placeholderTextColor="#94a3b8"
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              multiline
+              numberOfLines={4}
+            />
+            <View style={styles.reviewModalActions}>
+              <TouchableOpacity style={styles.reviewCancelBtn} onPress={closeReviewModal} disabled={reviewLoading}>
+                <Text style={styles.reviewCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.reviewSubmitBtn, (!reviewComment.trim() || reviewLoading) && { opacity: 0.6 }]}
+                onPress={handleSubmitReview}
+                disabled={!reviewComment.trim() || reviewLoading}
+              >
+                {reviewLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.reviewSubmitBtnText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <ChatAssistant
   role={role}
   data={{
@@ -1102,8 +1298,41 @@ const styles = StyleSheet.create({
   classInput: { flex: 1, padding: 12, borderRadius: 12, fontSize: 14, borderWidth: 1 },
   createBtn: { backgroundColor: "#10b981", paddingHorizontal: 16, borderRadius: 12, justifyContent: "center" },
   createBtnText: { color: "white", fontWeight: "800", fontSize: 14 },
-  classCard: { borderRadius: 14, padding: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
+  classCard: { borderRadius: 14, padding: 16, marginBottom: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
+  studentClassRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   classCardLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  reviewSubmittedBadge: { marginTop: 12, paddingVertical: 8, alignItems: "center" },
+  reviewSubmittedText: { fontSize: 13, fontWeight: "700", color: "#10b981" },
+  reviewClassBtn: { marginTop: 12, backgroundColor: "#fef3c7", paddingVertical: 10, borderRadius: 10, alignItems: "center", borderWidth: 1, borderColor: "#f59e0b55" },
+  reviewClassBtnText: { fontSize: 14, fontWeight: "800", color: "#b45309" },
+  instructorReviewsCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  instructorReviewsCtaIcon: { fontSize: 28 },
+  instructorReviewsCtaTitle: { fontSize: 16, fontWeight: "800" },
+  instructorReviewsCtaSub: { fontSize: 12, marginTop: 2 },
+  instructorReviewsCtaArrow: { fontSize: 18, fontWeight: "700" },
+  reviewModalOverlay: { flex: 1, backgroundColor: "#00000077", justifyContent: "flex-end" },
+  reviewModalBox: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
+  reviewModalTitle: { fontSize: 18, fontWeight: "800", marginBottom: 16, textAlign: "center" },
+  reviewModalLabel: { fontSize: 12, fontWeight: "600", marginBottom: 8 },
+  ratingRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
+  ratingChip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: "#e2e8f0", backgroundColor: "#f8fafc" },
+  ratingChipActive: { backgroundColor: "#6366f1", borderColor: "#6366f1" },
+  ratingChipText: { fontSize: 11, fontWeight: "600", color: "#64748b" },
+  ratingChipTextActive: { color: "#ffffff" },
+  reviewModalInput: { minHeight: 100, padding: 12, borderRadius: 12, borderWidth: 1, textAlignVertical: "top", marginBottom: 16 },
+  reviewModalActions: { flexDirection: "row", gap: 12 },
+  reviewCancelBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: "#e2e8f0" },
+  reviewCancelBtnText: { fontWeight: "700", color: "#64748b" },
+  reviewSubmitBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: "center", backgroundColor: "#6366f1" },
+  reviewSubmitBtnText: { fontWeight: "800", color: "#ffffff" },
   classCardIcon: { fontSize: 22 },
   classCardName: { fontSize: 15, fontWeight: "700" },
   manageBtn: { backgroundColor: "#eff6ff", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },

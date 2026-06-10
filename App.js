@@ -13,6 +13,7 @@ import AdminScreen from "./screens/AdminScreen";
 import AdminDashboardScreen from "./screens/AdminDashboardScreen";
 import StudentRequestsScreen from "./screens/StudentRequestsScreen";
 import AdminRequestsScreen from "./screens/AdminRequestsScreen";
+import InstructorReviewsScreen from "./screens/InstructorReviewsScreen";
 const Stack = createNativeStackNavigator();
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
   name="AdminRequests"
   component={AdminRequestsScreen}
 />
+        <Stack.Screen name="InstructorReviews" component={InstructorReviewsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
